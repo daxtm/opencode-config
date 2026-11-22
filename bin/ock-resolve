@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# ock-resolve — finish a merge that stopped on conflicts. Used by ock-ship (merging main into a
+# branch) and ock-test (merging into `test`). First git rerere (a resolution seen before), then —
+# only when the caller allows it — the model: headless `opencode run --agent resolver`
+# (model = `resolver` in agent-models.conf).
+#
+# Usage: ock-resolve <worktree> <label being merged> <sha being merged> <log file>
+# Exit 0 = the merge is committed cleanly in <worktree>. Exit 1 = not resolved (merge left in
+# progress; the caller aborts it).
+set -euo pipefail
+export OCK_INTERNAL=1   # our git operations must not re-trigger the kit's hooks
+
+dir="${1:?worktree}"; label="${2:?label}"; sha="${3:?sha}"; log="${4:?log file}"
+GW() { git -C "$dir" -c core.hooksPath=/dev/null "$@"; }
+
+merge_done() {
+	[[ -z "$(GW diff --name-only --diff-filter=U)" ]] || return 1
+	! GW rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 || return 1
+	[[ "$(GW rev-parse -q --verify HEAD^2 2>/dev/null)" == "$sha" ]] || return 1
+	[[ -z "$(GW status --porcelain --untracked-files=no)" ]] || return 1
+	! GW grep -qE '^(<{7}|>{7})( |$)' HEAD -- . 2>/dev/null
+}
+
+# 1. git rerere already knew the resolution
+if [[ -z "$(GW diff --name-only --diff-filter=U)" ]]; then
+	GW commit --quiet --no-edit >/dev/null 2>&1 || true
+	merge_done && exit 0
+fi
+
+# 2. the model (only when the caller allows it)
+[[ "${OCK_RESOLVE_RECORDED_ONLY:-0}" != 1 ]] || exit 1
+oc="$(command -v opencode || true)"; [[ -n "$oc" ]] || oc="$HOME/.opencode/bin/opencode"
+[[ -x "$oc" ]] || { echo "ock-resolve: opencode not found" >&2; exit 1; }
+into="$(GW branch --show-current 2>/dev/null || true)"; into="${into:-the branch being built}"
+{
+	echo "=== $(date '+%F %T') resolving $label (${sha:0:7}) into $into in $dir"
+	(cd "$dir" && timeout 1800 "$oc" run --agent resolver --archived \
+		"Finish the merge of \`$label\` in this folder (a throwaway worktree)." </dev/null 9>&-) \
+		|| echo "(opencode exited non-zero)"
+} >> "$log" 2>&1
+merge_done

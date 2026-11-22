@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# ock kit — your OpenCode setup is the project ~/workspace/projects/opencode-config. This deploys it.
+#
+#   Dev repo:  ~/workspace/projects/opencode-config        work on it like any project: /propose,
+#                                                           /apply, `!ock ship`, merge the PR
+#   Live kit:  ~/workspace/projects/.opencode-workflow-kit  a clone of GitHub's opencode-config at the
+#                                                           branch it follows (main by default);
+#                                                           its install.sh writes ~/.config/opencode
+#
+# Only what you MERGED reaches your OpenCode (main), so a half-built change can't break the tool you'd
+# use to fix it. To try a branch before merging: `ock kit use feat/x`; back: `ock kit use main`. When a
+# followed branch is merged and deleted on GitHub, the kit goes back to main by itself.
+#
+# Usage:
+#   ock kit status               what's deployed, whether an update is waiting, files the kit doesn't own
+#   ock kit apply [--if-changed] fetch and deploy the followed branch (OpenCode does this at startup)
+#   ock kit use <branch>         follow another branch (main, feat/x, test …) and deploy it now
+#   ock kit path                 print the dev repo folder
+#   ock models                   configured models and whether OpenCode knows them
+#
+# Break-glass (the kit itself broken):
+#   git -C ~/workspace/projects/.opencode-workflow-kit checkout --detach origin/main && ~/workspace/projects/.opencode-workflow-kit/install.sh
+set -euo pipefail
+
+DEV="${OCK_DEV:-$HOME/workspace/projects/opencode-config}"
+LIVE="${OCK_LIVE:-$HOME/workspace/projects/.opencode-workflow-kit}"
+CONFIG="${OCK_CONFIG:-$HOME/.config/opencode}"
+STATE="$HOME/.local/share/opencode-kit"
+LOG="$STATE/deploy.log"
+QUIET=0; IF_CHANGED=0
+
+die() { echo "ock kit: $*" >&2; exit 1; }
+say() { (( QUIET )) || echo "$*"; }
+L() { git -C "$LIVE" -c core.hooksPath=/dev/null "$@"; }
+
+followed() { L config --local --get kit.follow 2>/dev/null || echo main; }
+target_of() { L rev-parse -q --verify "refs/remotes/origin/$1" 2>/dev/null || true; }
+
+deploy() {
+	local b want have
+	[[ -d "$LIVE/.git" ]] || die "no live kit at $LIVE (run the opencode-config setup.sh)"
+	mkdir -p "$STATE"
+	exec 8>"$STATE/deploy.lock"
+	flock 8   # serialize target selection, checkout, install and success recording
+	L fetch -q --prune origin 2>/dev/null || say "ock kit: couldn't reach GitHub — using what's local"
+	b="$(followed)"
+	want="$(target_of "$b")"
+	if [[ -z "$want" && "$b" != main ]]; then
+		echo "ock kit: branch $b is gone from GitHub (merged?) — following main again"
+		L config --local --unset kit.follow || true
+		b=main; want="$(target_of main)"
+	fi
+	[[ -n "$want" ]] || die "nothing to deploy (GitHub has no $b branch)"
+	have="$(L rev-parse HEAD 2>/dev/null || true)"
+	if (( IF_CHANGED )) && [[ "$want" == "$have" && -f "$STATE/installed.sha" ]] \
+		&& [[ "$(cat "$STATE/installed.sha")" == "$want" ]]; then return 0; fi
+	if [[ -n "$(L status --porcelain --untracked-files=no)" ]]; then
+		die "files were edited in $LIVE — never edit the live kit. Reset it: git -C $LIVE checkout -- . && ock kit apply"
+	fi
+	L checkout -q --detach "$want"
+	echo "=== $(date '+%F %T') deploying $b @ ${want:0:7}" >> "$LOG"
+	rm -f "$STATE/installed.sha"   # a failed attempt cannot retain a success marker
+	if OCK_DEPLOYING=1 "$LIVE/install.sh" >> "$LOG" 2>&1; then
+		printf '%s\n' "$want" > "$STATE/installed.sha"
+		echo "opencode-config: deployed $b @ $(L log -1 --format='%h %s') — start a new OpenCode session to use it"
+	else
+		die "install.sh failed for $b @ ${want:0:7} (log: $LOG). Go back: ock kit use main"
+	fi
+}
+
+models() {
+	local conf="$LIVE/agent-models.conf" oc list role model id
+	[[ -f "$conf" ]] || die "no $conf"
+	oc="$(command -v opencode || true)"; [[ -n "$oc" ]] || oc="$HOME/.opencode/bin/opencode"
+	list="$("$oc" models 2>/dev/null || true)"
+	[[ -n "$list" ]] || echo "(couldn't list OpenCode's models — is a provider connected? /connect in OpenCode)"
+	while IFS='=' read -r role model; do
+		role="${role//[[:space:]]/}"; model="$(sed -E 's/#[[:space:]].*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' <<<"$model")"
+		[[ -n "$role" && "$role" != \#* ]] || continue
+		id="${model%%#*}"
+		if [[ -z "$list" ]]; then printf '%-11s %s\n' "$role" "$model"
+		elif grep -qxF "$id" <<<"$list"; then printf '%-11s %-45s ok\n' "$role" "$model"
+		else printf '%-11s %-45s NOT AVAILABLE (connect its provider, or fix the id)\n' "$role" "$model"; fi
+	done < <(grep -vE '^[[:space:]]*(#|$)' "$conf")
+}
+
+cmd="${1:-status}"; shift || true
+for a in "$@"; do case "$a" in --quiet) QUIET=1 ;; --if-changed) IF_CHANGED=1 ;; esac; done
+
+case "$cmd" in
+-h|--help|help) sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
+path) echo "$DEV" ;;
+apply) deploy ;;
+models) models ;;
+use)
+	b="${1:?usage: ock kit use <branch>}"
+	L fetch -q --prune origin 2>/dev/null || true
+	[[ -n "$(target_of "$b")" ]] || die "GitHub has no branch named $b (the kit deploys only pushed branches)"
+	if [[ "$b" == main ]]; then L config --local --unset kit.follow || true; else L config --local kit.follow "$b"; fi
+	deploy
+	;;
+status)
+	[[ -d "$LIVE/.git" ]] || die "no live kit at $LIVE (run the opencode-config setup.sh)"
+	L fetch -q --prune origin 2>/dev/null || true
+	b="$(followed)"; want="$(target_of "$b")"; have="$(L rev-parse HEAD)"
+	echo "dev repo:  $DEV"
+	echo "live kit:  $LIVE → follows $b @ $(L log -1 --format='%h %s')"
+	if [[ -z "$want" ]]; then echo "           $b no longer exists on GitHub — ock kit apply goes back to main"
+	elif [[ "$want" != "$have" ]]; then echo "           update waiting: ${want:0:7} — run: ock kit apply"
+	elif [[ ! -f "$STATE/installed.sha" || "$(<"$STATE/installed.sha")" != "$have" ]]; then
+		echo "           installation pending — run: ock kit apply"
+	else echo "           up to date"; fi
+	if [[ -f "$CONFIG/.kit-manifest" ]]; then
+		mapfile -t extra < <(for d in agents commands plugins skills; do
+			[[ -d "$CONFIG/$d" ]] && find "$CONFIG/$d" -type f -not -path '*/node_modules/*' -printf "$d/%P\n"
+		done | sort | grep -vxF -f "$CONFIG/.kit-manifest" || true)
+		if (( ${#extra[@]} )); then
+			echo; echo "In $CONFIG but not from opencode-config (move them into opencode-config/global/ to keep them):"
+			printf '  %s\n' "${extra[@]}"
+		fi
+	fi
+	;;
+*) die "unknown command: $cmd (ock kit help)" ;;
+esac

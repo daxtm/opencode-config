@@ -1,0 +1,24 @@
+schema: spec-driven
+
+context: |
+  Project: the user's OpenCode v2 setup (opencode-config): install script, workflow scripts (ock),
+  an OpenCode plugin, agents/commands, and the templates every new project gets.
+  Stack: bash, one TypeScript OpenCode plugin (plugin API of OpenCode 2.3), Markdown, OpenSpec.
+  Runs on: the user's Linux PC (zsh), deployed from GitHub's main into ~/.config/opencode by ock kit.
+  Constraints: workflow logic lives in scripts, not prompts (ADR-0002); prompt sizes are capped by
+  budgets.conf and request sizes by scripts/test-opencode.sh; the plugin must never throw.
+  The owner reviews behavior and output rather than code: plain language, observable results.
+
+rules:
+  proposal:
+    - Under 300 words, plain language; "Why" is at least two full sentences
+    - State what is out of scope
+    - Say how the owner will see it work (a command to run and the output to expect)
+  specs:
+    - A new capability's delta spec starts with "## Purpose" — one sentence of at least 60 characters
+    - Every requirement has a WHEN/THEN scenario a test can check
+  design:
+    - Anything costly to reverse gets an ADR in docs/adr/
+  tasks:
+    - Each task is one small commit; at most ~8 tasks
+    - The last task makes scripts/check.sh cover the new behavior and pass

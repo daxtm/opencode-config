@@ -1,0 +1,50 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Deployed by opencode-config (ock kit apply). Don't edit it here: change the opencode-config
+  // project (ock kit path) on a branch, ship it, merge it.
+  //
+  // Token budget: every tool and every line of system prompt is sent with EVERY request. Stock
+  // OpenCode sends ~6.3k tokens before your first word (plus a separate title request); this setup
+  // sends ~1.5k for the main session. Tools an agent doesn't need are denied below (a denied tool is
+  // removed from the request), and each agent re-allows only what it uses.
+  "update": "disable",
+  "model": "{{MODEL:main}}",
+  "default_agent": "main",
+  "warming": false,
+  "tool_output": { "max_lines": 400, "max_bytes": 16384 },
+  "compaction": { "auto": true, "keep": { "tokens": 8000 } },
+  "permissions": [
+    // Never useful here, each costs prompt tokens on every request
+    { "action": "experimental_image_generate", "resource": "*", "effect": "deny" },
+    { "action": "execute", "resource": "*", "effect": "deny" },
+    { "action": "opencode_*", "resource": "*", "effect": "deny" },
+    { "action": "question", "resource": "*", "effect": "deny" },
+    { "action": "skill", "resource": "*", "effect": "deny" },
+    { "action": "browser", "resource": "*", "effect": "deny" },
+    // Re-allowed per agent: web for the researcher, subagents for the main session and spec
+    { "action": "webfetch", "resource": "*", "effect": "deny" },
+    { "action": "websearch", "resource": "*", "effect": "deny" },
+    { "action": "subagent", "resource": "*", "effect": "deny" },
+    // Project boundary: files are written only inside the current project (and /tmp). Other
+    // projects, ~/.config/opencode and the live kit are read-only. The kit plugin applies the same
+    // rule to shell commands.
+    { "action": "edit", "resource": "/*", "effect": "deny" },
+    { "action": "edit", "resource": "/tmp/*", "effect": "allow" },
+    { "action": "edit", "resource": "{{HOME}}/.config/opencode/*", "effect": "deny" },
+    { "action": "edit", "resource": "{{KIT_DIR}}/*", "effect": "deny" },
+    // Secrets
+    { "action": "edit", "resource": "*.env", "effect": "deny" },
+    { "action": "edit", "resource": "*.env.*", "effect": "deny" },
+    { "action": "edit", "resource": "*.env.example", "effect": "allow" }
+  ],
+  "agents": {
+    // Built-ins replaced by the kit's agents (main, build, spec, debugger, researcher, resolver)
+    "plan": { "disabled": true },
+    "general": { "disabled": true },
+    "explore": { "disabled": true },
+    // Hidden helpers: titles come from the kit plugin (no model call); summaries use the cheapest model
+    "compaction": { "model": "{{MODEL:compaction}}" },
+    "summary": { "model": "{{MODEL:compaction}}" },
+    "title": { "model": "{{MODEL:compaction}}" }
+  }
+}

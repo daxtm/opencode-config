@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# ock — the opencode-kit command line. Every git/GitHub workflow step is a script here, not a prompt:
+# no model, no tokens, same result every time. Inside OpenCode run them with `!`, e.g. `!ock ship`.
+#
+#   ock new [name | /abs/dir] [--private] [--no-github] [--live <path> [--live-branch <b>]]
+#                              set up a project (new or existing): git, OpenSpec, ADRs, CI, GitHub
+#   ock branch <feat|fix|chore|docs>/<slug>   start (or resume) a work branch from main, pushed
+#   ock switch [branch]        go to a branch (default main) and fast-forward it
+#   ock ship [branch]          archive its finished OpenSpec change, push, open/update the PR to main
+#   ock status                 state of `test`, unfinished branches, live copy
+#   ock test [sync|rebuild [--dry-run]] [--fetch]   keep `test` = main + finished work
+#   ock cleanup [--dry-run]    delete local branches that are gone from GitHub (only when you run it)
+#   ock live [set <path> [branch] | follow <branch> | restart <cmd> | off]   live copy of a branch
+#   ock check [--force] [commit]   project checks (scripts/check.sh + OpenSpec) in a clean checkout
+#   ock gh-setup [dir]         GitHub settings + rulesets for a project (safe to re-run)
+#   ock kit [status | apply | use <branch> | path]   deploy this kit to ~/.config/opencode
+#   ock models                 configured models, and whether OpenCode knows them
+set -euo pipefail
+KIT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+B="$KIT_DIR/bin"
+cmd="${1:-help}"; shift || true
+case "$cmd" in
+new) exec "$B/ock-new" "$@" ;;
+branch) exec "$B/ock-branch" "$@" ;;
+ship) exec "$B/ock-ship" "$@" ;;
+status) exec "$B/ock-test" status "$@" ;;
+test) exec "$B/ock-test" "$@" ;;
+cleanup) exec "$B/ock-test" cleanup "$@" ;;
+check) exec "$B/ock-check" "$@" ;;
+gh-setup) exec "$B/ock-gh-setup" "$@" ;;
+kit) exec "$B/ock-kit" "$@" ;;
+models) exec "$B/ock-kit" models "$@" ;;
+live)
+	sub="${1:-}"; shift || true
+	case "$sub" in
+	"") exec "$B/ock-test" status ;;
+	set) exec "$B/ock-test" live-set "$@" ;;
+	follow) exec "$B/ock-test" live-branch "$@" ;;
+	restart) exec "$B/ock-test" live-restart "$@" ;;
+	off) exec "$B/ock-test" live-off ;;
+	*) echo "usage: ock live [set <path> [branch] | follow <branch> | restart <cmd> | off]" >&2; exit 2 ;;
+	esac ;;
+switch)
+	b="${1:-main}"
+	git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "ock switch: not inside a git repo" >&2; exit 1; }
+	if git remote | grep -qx origin; then git fetch -q --prune origin || echo "ock switch: couldn't reach GitHub — using what's local" >&2; fi
+	if git rev-parse -q --verify "refs/heads/$b" >/dev/null; then git switch -q "$b"
+	elif git rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null; then git switch -q --track -c "$b" "origin/$b"
+	else echo "ock switch: no branch named $b" >&2; exit 1; fi
+	if git rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null; then
+		git merge -q --ff-only "origin/$b" 2>/dev/null || echo "ock switch: $b has local commits not on GitHub — left as is"
+	fi
+	echo "on $b @ $(git log -1 --format='%h %s')" ;;
+help|-h|--help) sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
+*) echo "ock: unknown command: $cmd (ock help)" >&2; exit 2 ;;
+esac

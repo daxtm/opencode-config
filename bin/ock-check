@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# ock check [--cached | --force] [COMMIT] — run the project's checks on committed files in a clean
+# checkout: scripts/check.sh plus the OpenSpec checks (the same things CI runs). Results are cached
+# per commit, so a commit that passed once is not checked again.
+#   --cached  reuse a cached failure too (used by the automatic `test` sync)
+#   --force   ignore the cache
+set -euo pipefail
+mode=manual
+case "${1:-}" in --cached) mode=cached; shift;; --force) mode=force; shift;; esac
+(( $# <= 1 )) || { echo "usage: ock check [--cached|--force] [commit]" >&2; exit 2; }
+KIT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+OPENSPEC_NPM_BIN="$HOME/.local/share/opencode-kit/npm/node_modules/.bin"
+export PATH="$OPENSPEC_NPM_BIN:$PATH" OCK_INTERNAL=1 OPENSPEC_TELEMETRY=0
+sha="$(git rev-parse --verify --end-of-options "${1:-HEAD}^{commit}")"
+common="$(git rev-parse --path-format=absolute --git-common-dir)"
+cache="$common/ock-check"; mkdir -p "$cache"
+version="$( (sha256sum < "$KIT_DIR/bin/ock-check"; command -v openspec || true; node --version || true) | sha256sum | cut -d' ' -f1)"
+key="$cache/$sha-$version"
+exec 8>"$key.lock"; flock 8
+if [[ "$mode" != force && -f "$key.ok" ]]; then echo "Local checks passed $sha (cached)"; exit 0; fi
+if [[ "$mode" == cached && -f "$key.failed" ]]; then tail -n 12 "$key.failed" | cut -c1-240 >&2; echo "Full log: $key.failed" >&2; echo "Retry: ock check --force $sha" >&2; exit 1; fi
+tmp="$(mktemp -d)"
+cleanup() { git -c core.hooksPath=/dev/null worktree remove --force "$tmp/wt" >/dev/null 2>&1 || true; rm -rf -- "$tmp"; }
+trap cleanup EXIT
+git -c core.hooksPath=/dev/null worktree add -q --detach "$tmp/wt" "$sha"
+validate() (
+	set -e
+	cd "$tmp/wt"
+	[[ -x scripts/check.sh ]] || { echo 'Missing executable scripts/check.sh'; exit 1; }
+	./scripts/check.sh
+	if [[ -f openspec/config.yaml ]]; then
+		command -v openspec >/dev/null || { echo 'openspec not found — run: ock kit apply'; exit 1; }
+		openspec validate --all --no-interactive
+		shopt -s nullglob
+		archived=(openspec/changes/archive/*/)
+		if (( ${#archived[@]} )); then openspec validate --archived --no-interactive; fi
+	fi
+)
+# Keep errexit active inside validate: testing a function directly in an `if` would suppress it.
+rm -f "$key.ok"
+set +e
+validate > "$tmp/log" 2>&1
+rc=$?
+set -e
+if (( rc )); then mv "$tmp/log" "$key.failed"; tail -n 12 "$key.failed" | cut -c1-240 >&2; echo "Local checks failed $sha (exit $rc, log: $key.failed)" >&2; exit "$rc"; fi
+rm -f "$key.failed"; mv "$tmp/log" "$key.ok"
+echo "Local checks passed $sha"

@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# ock branch — start a work branch from fresh main and push it, or resume an existing one.
+#
+# Usage: ock branch <feat|fix|chore|docs>/<slug>
+#   An existing branch of that name (local or on GitHub) is just switched to. Uncommitted edits come
+#   along (git refuses only if they would clash with main).
+set -euo pipefail
+
+name="${1:-}"
+if ! [[ "$name" =~ ^(feat|fix|chore|docs)/[a-z0-9][a-z0-9._-]*$ ]]; then
+	echo "usage: ock branch <feat|fix|chore|docs>/<lowercase-slug>" >&2
+	exit 2
+fi
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "ock branch: not inside a git repo" >&2; exit 1; }
+G() { git -C "$root" "$@"; }
+has_origin() { [[ "$(G config --local --get kit.github)" != false ]] && G remote | grep -qx origin; }
+
+if G rev-parse -q --verify "refs/heads/$name" >/dev/null; then
+	G switch -q "$name"
+	echo "on existing branch $name"
+	exit 0
+fi
+
+base="main"
+if has_origin; then
+	G fetch -q --prune origin
+	if G show-ref --verify --quiet "refs/remotes/origin/$name"; then
+		G switch -q --track -c "$name" "origin/$name"
+		echo "on existing GitHub branch $name"
+		exit 0
+	fi
+	G rev-parse -q --verify refs/remotes/origin/main >/dev/null && base="origin/main"
+elif [[ "$(G config --local --get kit.github)" == false ]]; then
+	setup="$(G config --local --get kit.localSetup || true)"
+	if [[ -n "$setup" ]] && ! G merge-base --is-ancestor "$setup" main; then
+		G merge-base --is-ancestor main "$setup" || { echo "ock branch: local main changed; rerun ock new --no-github to refresh setup" >&2; exit 1; }
+		base="$setup"
+	fi
+fi
+G rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "ock branch: no main branch yet" >&2; exit 1; }
+
+G switch -q --no-track -c "$name" "$base"
+if has_origin; then
+	G push -q -u origin "$name"
+	echo "created $name from $base and pushed it"
+else
+	echo "created $name from $base (no GitHub remote yet)"
+fi

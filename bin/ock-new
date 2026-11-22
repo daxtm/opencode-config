@@ -231,6 +231,7 @@ if git rev-parse -q --verify HEAD >/dev/null; then
 	fi
 fi
 
+[[ -z "${OCK_NEW_NO_NEXT:-}" ]] || exit 0
 echo
 echo "Next: cd $PROJECT_DIR && opencode"
 echo "  new project:      /roadmap <the whole idea>   or   /propose <one feature>"

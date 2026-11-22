@@ -85,7 +85,7 @@ if [[ "$origin" == *.bundle ]]; then
 fi
 if [[ -z "$origin" || "$origin" == *.bundle ]]; then
 	say "publishing $DEV as the public GitHub repo $owner/$REPO_NAME (includes one run of the kit's own checks: a few minutes)"
-	do_ "$DEV/bin/ock" new "$DEV"
+	do_ env OCK_NEW_NO_NEXT=1 "$DEV/bin/ock" new "$DEV"
 else
 	say "GitHub remote already set ($origin)"
 fi
@@ -107,7 +107,8 @@ fi
 
 say "deploying the kit into $CONFIG"
 do_ "$LIVE/bin/ock" kit apply
-if (( ! DRY )) && "$oc" service status >/dev/null 2>&1; then
+svc="$("$oc" service status 2>/dev/null | head -n1 || true)"   # exits 0 even when stopped
+if (( ! DRY )) && [[ -n "$svc" && "$svc" != stopped* ]]; then
 	say "restarting OpenCode's background service so it picks up the new settings"
 	"$oc" service restart >/dev/null 2>&1 || say "couldn't restart it — run: opencode service restart"
 fi

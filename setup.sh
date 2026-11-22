@@ -84,7 +84,7 @@ if [[ "$origin" == *.bundle ]]; then
 	do_ git -C "$DEV" remote remove origin
 fi
 if [[ -z "$origin" || "$origin" == *.bundle ]]; then
-	say "publishing $DEV as the public GitHub repo $owner/$REPO_NAME"
+	say "publishing $DEV as the public GitHub repo $owner/$REPO_NAME (includes one run of the kit's own checks: a few minutes)"
 	do_ "$DEV/bin/ock" new "$DEV"
 else
 	say "GitHub remote already set ($origin)"

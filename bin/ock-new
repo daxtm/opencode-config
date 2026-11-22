@@ -213,14 +213,22 @@ if (( GITHUB )); then
 	fi
 fi
 
-# 7. `test` branch now, plus the live copy
+# 7. `test` branch now, plus the live copy. Building `test` runs the project's checks; if they fail,
+#    the setup itself still stands — `ock status` says what's wrong, and the next commit retries.
 if git rev-parse -q --verify HEAD >/dev/null; then
+	echo "test       building the test branch (runs the project's checks once)"
 	if [ -n "$LIVE_PATH" ]; then
-		"$KIT_DIR/bin/ock-test" live-set --adopt "$LIVE_PATH" "$LIVE_BRANCH" | sed 's/^/live       /'
+		tb=("$KIT_DIR/bin/ock-test" live-set --adopt "$LIVE_PATH" "$LIVE_BRANCH")
 	else
-		"$KIT_DIR/bin/ock-test" --adopt | sed 's/^/live       /'
+		tb=("$KIT_DIR/bin/ock-test" --adopt)
 	fi
-	echo "test       branch ready"
+	if out="$("${tb[@]}" 2>&1)"; then
+		[ -z "$out" ] || sed 's/^/live       /' <<<"$out"
+		echo "test       branch ready"
+	else
+		echo "test       NOT ready yet — $(tail -n1 <<<"$out" | cut -c1-200)"
+		echo "           (ock status shows why; it's retried after the next commit)"
+	fi
 fi
 
 echo

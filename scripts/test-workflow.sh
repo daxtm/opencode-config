@@ -39,10 +39,12 @@ arg_after() { local want="$1" prev="" a; shift; for a in "$@"; do [[ "$prev" == 
 case "$1 $2" in
 "auth status") exit 0 ;;
 "repo view")
-	n=""; [[ -n "${3:-}" && "$3" != --* ]] && n="$3"; n="${n:-$(name_of)}"; b="$S/repos/$n.git"
+	n=""; [[ -n "${3:-}" && "$3" != --* ]] && n="${3##*/}"; n="${n:-$(name_of)}"
+	[[ ! -d "$S/repos/$n.git" && -f "$S/redirects/$n" ]] && n="$(cat "$S/redirects/$n")"   # GitHub follows a renamed repo's old name until the name is reused
+	b="$S/repos/$n.git"
 	[[ -n "$n" && -d "$b" ]] || { echo "Could not resolve to a Repository" >&2; exit 1; }
 	case "$(arg_after -q "$@")" in
-	*nameWithOwner*) echo "tester/$n" ;; *visibility*) cat "$b.vis" ;; *sshUrl*) echo "$b" ;;
+	.name) echo "$n" ;; *nameWithOwner*) echo "tester/$n" ;; *visibility*) cat "$b.vis" ;; *sshUrl*) echo "$b" ;;
 	*defaultBranchRef*) git -C "$b" symbolic-ref --short HEAD 2>/dev/null ;; *) echo "{}" ;;
 	esac ;;
 "repo create")
@@ -370,12 +372,18 @@ SD="$SH/workspace/projects/opencode-config"; mkdir -p "$SD"
 (cd "$ROOT" && git ls-files -z --cached --others --exclude-standard | xargs -0 cp --parents -t "$SD")
 git -C "$SD" init -q -b main; git -C "$SD" add -A; HOME="$SH" git -C "$SD" commit -q -m "opencode-config"
 git -C "$SD" remote add origin "$T/opencode-config.bundle"
+git init -q --bare -b main "$SGH/repos/opencode-config.git"; echo PUBLIC > "$SGH/repos/opencode-config.git.vis"
+(cd "$SD" && HOME="$SH" FAKEGH="$SGH" OCK_SKIP_NPM=1 ./setup.sh --dry-run > "$LOG/setup-taken.txt" 2>&1)
+check "setup stops while GitHub has another opencode-config" grep -q 'already has tester/opencode-config' "$LOG/setup-taken.txt"
+mv "$SGH/repos/opencode-config.git" "$SGH/repos/opencode-config-old.git"; mv "$SGH/repos/opencode-config.git.vis" "$SGH/repos/opencode-config-old.git.vis"
+mkdir -p "$SGH/redirects"; echo opencode-config-old > "$SGH/redirects/opencode-config"   # renamed, as the user did
 (cd "$SD" && HOME="$SH" FAKEGH="$SGH" OCK_SKIP_NPM=1 ./setup.sh --dry-run > "$LOG/setup-dry.txt" 2>&1)
 check "setup --dry-run succeeds" grep -q 'dry run — nothing was changed' "$LOG/setup-dry.txt"
 check "setup --dry-run changes nothing" bash -c "test -L '$SH/.config/opencode' && test ! -e '$SGH/repos/opencode-config.git' && test ! -e '$SH/workspace/projects/.opencode-workflow-kit'"
 (cd "$SD" && HOME="$SH" FAKEGH="$SGH" OCK_SKIP_NPM=1 ./setup.sh > "$LOG/setup.txt" 2>&1)
 check "setup succeeds" grep -q '^Done\.' "$LOG/setup.txt"
 check "setup: the dangling ~/.config/opencode link is replaced by the deployed config" bash -c "test ! -L '$SH/.config/opencode' && test -f '$SH/.config/opencode/opencode.jsonc' && test -f '$SH/.config/opencode/plugins/kit.ts'"
+check "setup: the renamed old repo is left alone" test -z "$(git -C "$SGH/repos/opencode-config-old.git" for-each-ref)"
 check "setup: opencode-config is a public GitHub repo with rulesets" bash -c "grep -qx PUBLIC '$SGH/repos/opencode-config.git.vis' && ls '$SGH'/ruleset-opencode-config-*.json"
 check "setup: the live kit follows GitHub's main" test "$(git -C "$SH/workspace/projects/.opencode-workflow-kit" rev-parse HEAD)" = "$(git -C "$SGH/repos/opencode-config.git" rev-parse main)"
 check "setup: ock is on PATH, from the live kit" test "$(readlink "$SH/.local/bin/ock")" = "$SH/workspace/projects/.opencode-workflow-kit/bin/ock"

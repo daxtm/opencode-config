@@ -184,7 +184,8 @@ if (( GITHUB )); then
 	if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
 		echo "github     gh not logged in — later: gh auth login, then run ock new here again"
 	elif (( ! HAS_ORIGIN )); then
-		if gh repo view "$PROJECT_NAME" >/dev/null 2>&1; then
+		# a renamed repo keeps a redirect from its old name — only a repo really named like this counts
+		if [[ "$(gh repo view "$PROJECT_NAME" --json name -q .name 2>/dev/null || true)" == "$PROJECT_NAME" ]]; then
 			echo "github     a repo named $PROJECT_NAME already exists on your account — not touching it."
 			echo "           if it's this project: git remote add origin \"\$(gh repo view $PROJECT_NAME --json sshUrl -q .sshUrl)\" && ock new"
 		else

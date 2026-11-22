@@ -40,7 +40,8 @@ node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.ex
 owner="$(gh api user -q .login)"
 origin="$(git -C "$DEV" remote get-url origin 2>/dev/null || true)"
 if [[ -z "$origin" || "$origin" == *.bundle ]]; then
-	if gh repo view "$owner/$REPO_NAME" >/dev/null 2>&1; then
+	# A renamed repo keeps a redirect from its old name: only a repo really named opencode-config counts.
+	if [[ "$(gh repo view "$owner/$REPO_NAME" --json name -q .name 2>/dev/null || true)" == "$REPO_NAME" ]]; then
 		die "GitHub already has $owner/$REPO_NAME (the old one?). Rename it first, e.g.:
        gh repo rename ${REPO_NAME}-old -R $owner/$REPO_NAME --yes
      then run this again."

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ock new — set up a project for the opencode-kit workflow (new or existing, including pi-era projects).
 #
-#   git + OpenSpec + project AGENTS.md + ADRs + PR template + CI (GitHub Actions job `check` running
-#   scripts/check.sh and the OpenSpec checks) + hooks that keep `test` up to date + a PUBLIC GitHub
+#   git + OpenSpec + project AGENTS.md + ADRs + PR template + local checks (scripts/check.sh, run by
+#   ock ship; no GitHub Actions — ADR-0012) + hooks that keep `test` up to date + a PUBLIC GitHub
 #   repo named exactly like the folder (public, so GitHub Free enforces the branch rulesets), with
 #   merge settings and rulesets. Never commit secrets: anyone can read a public repo.
 # Nothing that already exists is overwritten; existing specs and changes are kept.
@@ -141,7 +141,6 @@ if grep -qiE '\bpi\b|pi-branch|pi-check|/verify|verifier' AGENTS.md; then
 	echo "AGENTS.md  mentions pi or the old verifier — ask OpenCode to \"update AGENTS.md to the template in $TEMPLATE/AGENTS.md, keep the project facts\""
 fi
 place scripts/check.sh 755
-place .github/workflows/ci.yml
 place .github/pull_request_template.md
 place docs/adr/README.md
 place docs/adr/0000-template.md
@@ -172,7 +171,7 @@ done < <(git ls-files --others --exclude-standard -z)
 if git diff --cached --quiet; then
 	echo "git        nothing new to commit"
 else
-	OCK_INTERNAL=1 git commit -q -m "chore: set up the opencode-kit workflow (OpenSpec, ADRs, CI, local checks)"
+	OCK_INTERNAL=1 git commit -q -m "chore: set up the opencode-kit workflow (OpenSpec, ADRs, local checks)"
 	echo "git        committed the setup on $(git branch --show-current)"
 fi
 

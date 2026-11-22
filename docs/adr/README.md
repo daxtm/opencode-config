@@ -16,5 +16,6 @@ except to mark it superseded by a newer ADR.
 | [0007](0007-test-holds-only-finished-work.md) | `test` holds only finished work | Accepted | 2026-11-21 |
 | [0008](0008-opencode-replaces-pi.md) | OpenCode v2 replaces pi; the kit is ported, not rebuilt | Accepted | 2026-11-22 |
 | [0009](0009-kit-commands-run-with-bang.md) | No-model kit commands run as `!ock …` | Accepted | 2026-11-22 |
-| [0010](0010-ci-check-required-again.md) | PRs to main require the GitHub Actions `check` again | Accepted | 2026-11-22 |
+| [0010](0010-ci-check-required-again.md) | PRs to main require the GitHub Actions `check` again | Superseded by 0012 | 2026-11-22 |
 | [0011](0011-project-boundary.md) | Agents write only inside the current project | Accepted | 2026-11-22 |
+| [0012](0012-no-github-actions.md) | No GitHub Actions — checks run locally in `ock ship` | Accepted | 2026-11-22 |

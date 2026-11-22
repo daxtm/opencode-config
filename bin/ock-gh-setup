@@ -4,9 +4,9 @@
 #   Repo settings:  merge commits only (no squash/rebase — keeps `test` and main in step),
 #                   branches are NOT auto-deleted (you choose "Delete branch" on the merged PR),
 #                   no auto-merge, no wiki/projects, main is the default branch.
-#   Ruleset "main": changes only through a PR whose required status check `check` (GitHub Actions,
-#                   .github/workflows/ci.yml) passed; no force-push, no deletion. 0 approvals (you
-#                   can't approve your own PR).
+#   Ruleset "main": changes only through a PR; no force-push, no deletion. 0 approvals (you can't
+#                   approve your own PR). No required status check: the checks run locally in
+#                   ock ship (ADR-0012). Re-running this removes a `check` requirement set up earlier.
 #   Ruleset "test": no deletion (force-push stays allowed: `ock test rebuild` needs it).
 #   Public repos:   secret scanning + push protection (pushes containing secrets are rejected).
 #
@@ -68,10 +68,7 @@ MAIN_RULES='{
         "allowed_merge_methods": ["merge"],
         "dismiss_stale_reviews_on_push": false, "require_code_owner_review": false,
         "require_last_push_approval": false, "required_approving_review_count": 0,
-        "required_review_thread_resolution": false } },
-    { "type": "required_status_checks", "parameters": {
-        "strict_required_status_checks_policy": false,
-        "required_status_checks": [ { "context": "check" } ] } }
+        "required_review_thread_resolution": false } }
   ]
 }'
 TEST_RULES='{
@@ -81,7 +78,7 @@ TEST_RULES='{
 }'
 
 if out="$(ruleset main "$MAIN_RULES")" && out2="$(ruleset test "$TEST_RULES")"; then
-	echo "github     rulesets on: main (PR + green CI \`check\` required), test (no deletion)"
+	echo "github     rulesets on: main (PR required), test (no deletion)"
 elif [[ "$visibility" != "PUBLIC" ]] && grep -qiE 'upgrade|not available|403|plan' <<<"${out:-}${out2:-}"; then
 	echo "github     WARNING: $repo is private — GitHub Free can't enforce rulesets there, so main is UNPROTECTED."
 	echo "           To protect it, make it public (check it has no secrets first), then re-run ock gh-setup:"

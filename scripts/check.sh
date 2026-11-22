@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# opencode-config's checks — run by `ock check`, the build agent and GitHub Actions on every PR.
-#   1. every shell script parses (and passes shellcheck, when it's installed — CI has it)
+# opencode-config's checks — run by `ock check` (and so by `ock ship`) and the build agent.
+#   1. every shell script parses (and passes shellcheck, when it's installed)
 #   2. the plugin parses as TypeScript, and the JSONC config parses
 #   3. prompts (global AGENTS.md, agents, commands, templates) stay inside budgets.conf
 #   4. the workflow scripts do what they promise (scripts/test-workflow.sh, credential-free)
 #   5. OpenCode itself, with a fake model: request token budget, guard, agents, commands
-#      (scripts/test-opencode.sh; skipped locally when OpenCode isn't installed, required in CI)
+#      (scripts/test-opencode.sh; skipped when OpenCode isn't installed)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 cd "$ROOT"
@@ -62,10 +62,6 @@ else
 	bash "$ROOT/scripts/test-workflow.sh" || bad "workflow behavior (see FAIL lines above)"
 	bash "$ROOT/scripts/test-opencode.sh" || bad "OpenCode behavior (see FAIL lines above)"
 	(( fail == before )) && echo "ok   behavior tests"
-fi
-
-if [[ -n "${GITHUB_BASE_REF:-}" ]] && git diff --name-only "origin/$GITHUB_BASE_REF...HEAD" 2>/dev/null | grep -qx budgets.conf; then
-	echo "::warning file=budgets.conf::This PR changes the prompt budgets — make sure that's on purpose"
 fi
 
 exit "$fail"

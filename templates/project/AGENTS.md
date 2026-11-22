@@ -10,8 +10,8 @@
 <language/runtime + version, framework, package manager, database>
 
 ## Checks
-`scripts/check.sh` runs everything (install deps, tests, lint, build); CI runs it on every PR.
-`ock check` runs it on a commit in a clean checkout.
+`scripts/check.sh` runs everything (install deps, tests, lint, build). `ock check` runs it on a
+commit in a clean checkout; `ock ship` won't push a commit that fails it.
 Run / demo: `<command that shows it working>`
 
 ## Layout

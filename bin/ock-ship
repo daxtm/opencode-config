@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # ock ship — ship one branch: bring it up to date with main, check and archive its OpenSpec change,
-# run the local checks, push, and open (or update) its PR to main. You merge the PR on GitHub once
-# CI (`check`) is green. No model is involved, except when main conflicts with the branch (then
-# ock-resolve).
+# run the local checks, push, and open (or update) its PR to main. You merge the PR on GitHub.
+# No model is involved, except when main conflicts with the branch (then ock-resolve).
 #
 # Usage: ock ship [branch]      default: the current branch
 #
@@ -135,7 +134,7 @@ else
 		if (( ${#adrs[@]} )); then echo; echo "## Decisions"; printf -- '- `%s`\n' "${adrs[@]}"; fi
 		echo
 		echo "---"
-		echo "Local checks passed for ${new:0:7}. Merge with **Create a merge commit** once CI \`check\` is green."
+		echo "Local checks passed for ${new:0:7}. Merge with **Create a merge commit**."
 	} > "$body"
 	type="${branch%%/*}"; slug="${branch#*/}"
 	url="$(cd "$root" && gh pr create --base main --head "$branch" --title "$type: ${slug//-/ }" --body-file "$body")" \

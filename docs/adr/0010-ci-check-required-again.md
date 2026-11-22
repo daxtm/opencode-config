@@ -1,6 +1,6 @@
 # ADR-0010: PRs to main require the GitHub Actions `check` again
 
-- Status: Accepted
+- Status: Superseded by ADR-0012
 - Date: 2026-11-22
 - Related: restores the CI requirement of ADR-0003 that pi-config v3 removed
 

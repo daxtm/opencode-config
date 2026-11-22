@@ -20,7 +20,6 @@ check() { local name="$1"; shift; if "$@" >/dev/null 2>&1; then pass "$name"; el
 
 for c in git node; do command -v "$c" >/dev/null || { echo "test-workflow: $c is required"; exit 1; }; done
 if ! command -v openspec >/dev/null; then
-	[[ -n "${CI:-}" ]] && { echo "test-workflow: openspec is required in CI"; exit 1; }
 	echo "test-workflow: openspec is required (run ock kit apply or install @fission-ai/openspec@2.1.1)" >&2; exit 1
 fi
 
@@ -54,10 +53,14 @@ case "$1 $2" in
 "api "*|"api -X")
 	[[ "$2" == user ]] && { echo tester; exit 0; }
 	b="$S/repos/$(name_of).git"; vis="$(cat "$b.vis" 2>/dev/null)"
-	if [[ "$*" == *rulesets* ]]; then
+	if [[ "$*" == *rulesets* ]]; then   # stored as $S/ruleset-<repo>-<name>.json
 		if [[ "$*" == *-X* ]]; then
 			[[ "$vis" == PUBLIC ]] || { echo '{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature."}' >&2; exit 1; }
-			cat > "$S/ruleset-$(name_of)-$RANDOM.json"; echo "ruleset applied" >> "$S/calls.log"
+			body="$(cat)"; rs="$(grep -o '"name": "[^"]*"' <<<"$body" | head -n1 | cut -d'"' -f4)"
+			printf '%s\n' "$body" > "$S/ruleset-$(name_of)-$rs.json"; echo "ruleset applied: $rs ($3)" >> "$S/calls.log"
+		else
+			rs="$(arg_after -q "$@" | sed -n 's/.*select(.name == "\([^"]*\)").*/\1/p')"
+			[[ -n "$rs" && -f "$S/ruleset-$(name_of)-$rs.json" ]] && echo 1
 		fi
 		exit 0
 	fi
@@ -102,15 +105,21 @@ echo "ock new"
 (cd "$P" && ock new demo > "$LOG/new-demo.txt" 2>&1); D="$P/demo"
 check "new project gets a public GitHub repo" grep -qx PUBLIC "$GH/repos/demo.git.vis"
 check "main ruleset applied (PR required)" grep -q "rulesets on: main" "$LOG/new-demo.txt"
-check "main ruleset requires the CI check" bash -c "cat '$GH'/ruleset-demo-*.json | grep -q '\"context\": \"check\"'"
+check "main ruleset requires no status check (no GitHub Actions)" bash -c "test -f '$GH/ruleset-demo-main.json' && ! grep -q required_status_checks '$GH/ruleset-demo-main.json'"
 check "secret push protection turned on" grep -q "push protection on" "$LOG/new-demo.txt"
 check "GitHub never auto-deletes branches" grep -q "delete_branch_on_merge=false" "$GH/calls.log"
-check "project gets the CI workflow (job check) and an executable local check" bash -c "grep -q '^  check:' '$D/.github/workflows/ci.yml' && test -x '$D/scripts/check.sh'"
+check "project gets no CI workflow, and an executable local check" bash -c "test ! -e '$D/.github/workflows' && test -x '$D/scripts/check.sh'"
 check "setup committed on main passes its own checks" bash -c "cd '$D' && ./scripts/check.sh"
 check "test branch exists on GitHub" remote_has demo test
 
 (cd "$P" && ock new secret --private > "$LOG/new-private.txt" 2>&1)
 check "--private repo warns that main is unprotected" grep -q UNPROTECTED "$LOG/new-private.txt"
+
+# a repo set up while the kit still required the CI `check`: re-running gh-setup drops the requirement
+printf '{"name": "main", "rules": [{"type": "pull_request"}, {"type": "required_status_checks", "parameters": {"required_status_checks": [{"context": "check"}]}}]}\n' > "$GH/ruleset-demo-main.json"
+(cd "$D" && ock gh-setup > "$LOG/gh-setup-again.txt" 2>&1)
+check "gh-setup replaces the existing main ruleset" grep -q 'ruleset applied: main (PUT)' "$GH/calls.log"
+check "gh-setup removes an old required CI check" bash -c "! grep -q required_status_checks '$GH/ruleset-demo-main.json'"
 
 # takeover: a repo on GitHub whose only branch is chore/repo-baseline (no main, no test)
 git init -q --bare -b chore/repo-baseline "$GH/repos/legacy.git"; echo PUBLIC > "$GH/repos/legacy.git.vis"
@@ -226,7 +235,7 @@ git -C "$Q" config pi.kit true; git -C "$Q" config pi.live.restart "echo restart
 (cd "$Q" && ock new > "$LOG/new-pi-era.txt" 2>&1)
 check "pi-era: the pi hook line is replaced by the kit's" bash -c "! grep -q pi-workflow-kit '$Q/.git/hooks/post-commit' && grep -q '# opencode-kit' '$Q/.git/hooks/post-commit'"
 check "pi-era: pi settings carry over" test "$(git -C "$Q" config kit.live.restart)" = "echo restarted"
-check "pi-era: CI workflow added" test -f "$Q/.github/workflows/ci.yml"
+check "pi-era: no CI workflow added" test ! -e "$Q/.github/workflows/ci.yml"
 
 # ---- recovery regressions ----------------------------------------------------------------------
 echo "recovery"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ock check [--cached | --force] [COMMIT] — run the project's checks on committed files in a clean
-# checkout: scripts/check.sh plus the OpenSpec checks (the same things CI runs). Results are cached
+# checkout: scripts/check.sh plus the OpenSpec checks (ock ship runs this before pushing). Cached
 # per commit, so a commit that passed once is not checked again.
 #   --cached  reuse a cached failure too (used by the automatic `test` sync)
 #   --force   ignore the cache

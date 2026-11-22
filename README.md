@@ -1,6 +1,6 @@
 # opencode-config
 
-My OpenCode v2 setup, managed like any other project: changes go branch → PR → CI → merge, and a
+My OpenCode v2 setup, managed like any other project: changes go branch → PR → merge, and a
 merged change reaches OpenCode on its own. Stripped down for tokens (a main-session request is ~3k
 tokens of overhead instead of ~6.8k stock), with a spec-driven git workflow that runs in scripts,
 not prompts.
@@ -14,7 +14,7 @@ Start OpenCode in a project folder (`cd ~/workspace/projects/<name> && opencode`
 | Ask something, small edit | just say it |
 | Plan one feature (OpenSpec change on `feat/<id>`) | `/propose <idea>` (or `/propose next` from the roadmap) |
 | Build the approved change | `/apply` |
-| Fix a bug or a red check | `/fix <symptom>` · `/fix ci` |
+| Fix a bug or a failing check | `/fix <symptom>` |
 | Look something up on the web | `/research <question>` |
 | Plan a whole project | `/roadmap <idea>` |
 | Record a decision | `/adr <decision>` |
@@ -28,7 +28,7 @@ Start OpenCode in a project folder (`cd ~/workspace/projects/<name> && opencode`
 tokens). Every `ock` command also works in a normal terminal. `ock help` lists them all.
 
 New project: `ock new <name>` (creates `~/workspace/projects/<name>`, a public GitHub repo with
-rulesets, CI, OpenSpec, ADRs, the `test` branch). Existing folder or pi-era project: `cd` into it,
+rulesets, OpenSpec, ADRs, local checks, the `test` branch). Existing folder or pi-era project: `cd` into it,
 `ock new`.
 
 ## What happens on its own
@@ -36,8 +36,8 @@ rulesets, CI, OpenSpec, ADRs, the `test` branch). Existing folder or pi-era proj
 - Feature branches are pushed for you. `test` = main + every finished branch (a `feat/` branch once
   all its OpenSpec tasks are ticked; `fix/` `chore/` `docs/` right away). A live copy (ComfyUI nodes
   get one automatically) follows `test`.
-- `ock ship` archives the finished OpenSpec change, runs the checks, pushes, opens the PR. You merge
-  it on GitHub once CI `check` is green (merge commits only). Branches are deleted only when you
+- `ock ship` archives the finished OpenSpec change, runs the checks, pushes, opens the PR — it
+  refuses to push if the checks fail. You merge it on GitHub (merge commits only). Branches are deleted only when you
   choose "Delete branch" on the merged PR, and locally only by `ock cleanup`.
 - Merging a PR here (opencode-config) deploys it: OpenCode runs `ock kit apply` at startup.
   Try a branch before merging: `ock kit use feat/x`; back: `ock kit use main`.

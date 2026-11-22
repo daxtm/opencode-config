@@ -7,7 +7,7 @@
 #      link, never what it pointed to. Anything else there is kept (install.sh saves a copy of any
 #      file it has to replace).
 #   3. OpenSpec CLI (pinned) for the kit
-#   4. GitHub: this repo becomes the PUBLIC repo `opencode-config` (ock new: rulesets, CI `check`,
+#   4. GitHub: this repo becomes the PUBLIC repo `opencode-config` (ock new: rulesets,
 #      `test` branch, hooks)
 #   5. the live kit ~/workspace/projects/.opencode-workflow-kit: a clone of GitHub's opencode-config
 #      that follows main; `ock kit apply` deploys it into ~/.config/opencode

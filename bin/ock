@@ -3,7 +3,7 @@
 # no model, no tokens, same result every time. Inside OpenCode run them with `!`, e.g. `!ock ship`.
 #
 #   ock new [name | /abs/dir] [--private] [--no-github] [--live <path> [--live-branch <b>]]
-#                              set up a project (new or existing): git, OpenSpec, ADRs, CI, GitHub
+#                              set up a project (new or existing): git, OpenSpec, ADRs, GitHub
 #   ock branch <feat|fix|chore|docs>/<slug>   start (or resume) a work branch from main, pushed
 #   ock switch [branch]        go to a branch (default main) and fast-forward it
 #   ock ship [branch]          archive its finished OpenSpec change, push, open/update the PR to main

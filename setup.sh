@@ -35,6 +35,8 @@ die() { echo "setup: STOP — $*" >&2; exit 1; }
 [[ "$DEV" == "$HOME/workspace/projects/$REPO_NAME" ]] || die "run this from ~/workspace/projects/$REPO_NAME (it is in $DEV)"
 for c in git gh node npm curl python3 flock; do command -v "$c" >/dev/null || die "$c is not installed"; done
 gh auth status >/dev/null 2>&1 || die "gh isn't logged in — run: gh auth login"
+node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.exit(a > 22 || (a === 22 && b >= 6) ? 0 : 1)' \
+	|| say "WARNING: Node.js $(node --version) is older than 22.6 — the kit's own checks need 22.6+ (projects are unaffected)"
 owner="$(gh api user -q .login)"
 origin="$(git -C "$DEV" remote get-url origin 2>/dev/null || true)"
 if [[ -z "$origin" || "$origin" == *.bundle ]]; then

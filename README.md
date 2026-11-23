@@ -24,6 +24,10 @@ Start OpenCode in a project folder (`cd ~/workspace/projects/<name> && opencode`
 | Delete local branches you deleted on GitHub | `!ock cleanup` (`--dry-run` first if you like) |
 | Go back to main | `!ock switch` |
 
+While a subagent works, a line above the prompt shows which one, for how long, and what it's doing
+right now; the sidebar lists the session's subagents; a toast (and, when the terminal isn't focused,
+a desktop notification) says when one finishes. ↓ on an empty prompt opens OpenCode's subagent list.
+
 `!` runs a shell command right in OpenCode: its output shows up and **no model is called** (zero
 tokens). Every `ock` command also works in a normal terminal. `ock help` lists them all.
 

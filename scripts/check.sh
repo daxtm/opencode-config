@@ -26,9 +26,9 @@ fi
 before=$fail
 ESBUILD=(npx -y esbuild@0.28.2)
 command -v esbuild >/dev/null && ESBUILD=(esbuild)
-for f in global/plugins/*.ts; do
+while IFS= read -r f; do   # server plugins (*.ts) and TUI plugins (*.tsx)
 	"${ESBUILD[@]}" "$f" --log-level=error >/dev/null || bad "TypeScript syntax: $f"
-done
+done < <(find global/plugins -type f \( -name '*.ts' -o -name '*.tsx' \) | sort)
 node -e '
 const fs = require("fs"); const src = fs.readFileSync(process.argv[1], "utf8");
 let out = "", i = 0, str = false;

@@ -65,7 +65,8 @@ class Handler(BaseHTTPRequestHandler):
         def event(delta, finish):
             chunk = dict(base, choices=[{"index": 0, "delta": delta, "finish_reason": finish}])
             if finish:
-                chunk["usage"] = {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+                prompt = len(raw) // 4  # roughly what a real provider would report
+                chunk["usage"] = {"prompt_tokens": prompt, "completion_tokens": 1, "total_tokens": prompt + 1}
             self.wfile.write(("data: " + json.dumps(chunk) + "\n\n").encode())
             self.wfile.flush()
 

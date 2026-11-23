@@ -19,3 +19,4 @@ except to mark it superseded by a newer ADR.
 | [0010](0010-ci-check-required-again.md) | PRs to main require the GitHub Actions `check` again | Superseded by 0012 | 2026-11-22 |
 | [0011](0011-project-boundary.md) | Agents write only inside the current project | Accepted | 2026-11-22 |
 | [0012](0012-no-github-actions.md) | No GitHub Actions — checks run locally in `ock ship` | Accepted | 2026-11-22 |
+| [0013](0013-token-use.md) | Bound session size — one build per task, a 128k context cap | Accepted | 2026-11-23 |

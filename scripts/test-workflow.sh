@@ -405,6 +405,26 @@ check "setup: points out the stray AGENTS.md" grep -q 'contains AGENTS.md' "$LOG
 check "setup can be re-run" grep -q '^Done\.' "$LOG/setup-again.txt"
 check "the kit reports itself up to date" bash -c "HOME='$SH' '$SH/.local/bin/ock' kit status | grep -q 'up to date'"
 
+# ---- ock usage: reads OpenCode's records ---------------------------------------------------------
+echo "ock usage"
+UH="$T/usage-home"; mkdir -p "$UH/.local/share/opencode"
+python3 - "$UH/.local/share/opencode/opencode.db" <<'PY'
+import json, sqlite3, sys, time
+c = sqlite3.connect(sys.argv[1]); now = int(time.time() * 1000)
+c.execute("create table session_v2 (id text, title text, parent_id text)")
+c.execute("create table session_message (id text, session_id text, type text, time_created integer, data text)")
+c.executemany("insert into session_v2 values (?,?,?)", [("ses_root1", "Implement GUI setup", None), ("ses_child1", "build: task 1", "ses_root1")])
+msg = lambda sid, agent, model, variant, fresh, cached: (sid + agent, sid, "assistant", now, json.dumps({"agent": agent,
+    "model": {"providerID": "opencode-go", "id": model, "variant": variant}, "tokens": {"input": fresh, "output": 500, "reasoning": 100, "cache": {"read": cached, "write": 0}}}))
+c.executemany("insert into session_message values (?,?,?,?,?)", [msg("ses_child1", "build", "glm-5.3-flash", "high", 1000, 300000),
+    msg("ses_root1", "main", "deepseek-v4.1-flash", "max", 2000, 50000), ("u1", "ses_root1", "user", now, "{}")])
+c.commit()
+PY
+HOME="$UH" "$ROOT/bin/ock" usage 7 > "$LOG/usage.txt" 2>&1
+check "ock usage: totals per agent and model, variant included" grep -q 'build  opencode-go/glm-5.3-flash#high .* 1 .*301.0k' "$LOG/usage.txt"
+check "ock usage: subagents count toward the session that started them" grep -q 'Implement GUI setup (_root1) .* 2 ' "$LOG/usage.txt"
+check "ock usage: largest request listed first" bash -c "grep -A1 'Largest single requests' '$LOG/usage.txt' | grep -q '301.0k in .*build'"
+
 # ---- kit guard ---------------------------------------------------------------------------------
 echo "guards"
 # The guard lets writes into /tmp through, so its fixtures must live outside /tmp (and `ock check`

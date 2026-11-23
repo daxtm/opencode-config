@@ -5,7 +5,7 @@ Usage: fake-model.py <port> <request-log.jsonl> <plan.json>
 
 Every request body is appended to the log. The reply follows the plan: a JSON list of steps, each
 {"when": "<text in the system prompt>" (optional), "text": "..."} or {"when": ..., "tool": name,
-"args": {...}}. Each request takes the first unused step whose "when" matches its system prompt
+"args": {...}}, optionally with "delay": seconds before the reply starts. Each request takes the first unused step whose "when" matches its system prompt
 (so main, build, spec… can be scripted independently); with none left it answers "done". Used
 steps are recorded in <plan.json>.used, so rewriting the plan and deleting that file starts over.
 """
@@ -56,6 +56,7 @@ class Handler(BaseHTTPRequestHandler):
             used.append(i)
             break
         json.dump(used, open(USED, "w"))
+        time.sleep(float(step.get("delay", 0)))  # a step can take a while, like a real model
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()

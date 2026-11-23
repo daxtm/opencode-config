@@ -42,7 +42,8 @@ while (i < src.length) {            // strip // and /* */ comments outside strin
 }
 JSON.parse(out.replace(/,(\s*[}\]])/g, "$1"));
 ' global/opencode.jsonc || bad "global/opencode.jsonc does not parse"
-(( fail == before )) && echo "ok   plugin and config parse"
+python3 -m py_compile lib/*.py scripts/*.py 2>&1 || bad "Python syntax"
+(( fail == before )) && echo "ok   plugin, Python and config parse"
 
 shopt -s nullglob
 before=$fail

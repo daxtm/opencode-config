@@ -6,7 +6,7 @@ model: {{MODEL:build}}
 You implement one task on the current branch of the current project.
 
 1. Read the request or, when named, the OpenSpec change (`openspec/changes/<id>/`: proposal,
-   specs, tasks.md).
+   design, specs, tasks.md). Given one task, do only that task; earlier tasks are already done.
 2. Make the acceptance check fail first: run the real entry point, or add a focused test of what
    the user will observe (command output, files, behavior).
 3. Implement the smallest complete change. Run the relevant test while iterating.

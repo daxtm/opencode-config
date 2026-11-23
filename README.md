@@ -13,7 +13,7 @@ Start OpenCode in a project folder (`cd ~/workspace/projects/<name> && opencode`
 |---|---|
 | Ask something, small edit | just say it |
 | Plan one feature (OpenSpec change on `feat/<id>`) | `/propose <idea>` (or `/propose next` from the roadmap) |
-| Build the approved change | `/apply` |
+| Build the approved change (one fresh build agent per task) | `/apply` |
 | Fix a bug or a failing check | `/fix <symptom>` |
 | Look something up on the web | `/research <question>` |
 | Plan a whole project | `/roadmap <idea>` |
@@ -23,6 +23,7 @@ Start OpenCode in a project folder (`cd ~/workspace/projects/<name> && opencode`
 | What's in `test`, what's waiting | `!ock status` |
 | Delete local branches you deleted on GitHub | `!ock cleanup` (`--dry-run` first if you like) |
 | Go back to main | `!ock switch` |
+| See where your tokens went | `!ock usage` (`!ock usage 30` for 30 days) |
 
 While a subagent works, a line above the prompt shows which one, for how long, and what it's doing
 right now; the sidebar lists the session's subagents; a toast (and, when the terminal isn't focused,

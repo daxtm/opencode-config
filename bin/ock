@@ -15,6 +15,7 @@
 #   ock gh-setup [dir]         GitHub settings + rulesets for a project (safe to re-run)
 #   ock kit [status | apply | use <branch> | path]   deploy this kit to ~/.config/opencode
 #   ock models                 configured models, and whether OpenCode knows them
+#   ock usage [days]           where your tokens went (per agent/model, sessions, largest requests)
 set -euo pipefail
 KIT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 B="$KIT_DIR/bin"
@@ -30,6 +31,7 @@ check) exec "$B/ock-check" "$@" ;;
 gh-setup) exec "$B/ock-gh-setup" "$@" ;;
 kit) exec "$B/ock-kit" "$@" ;;
 models) exec "$B/ock-kit" models "$@" ;;
+usage) exec python3 "$KIT_DIR/lib/usage.py" "$@" ;;
 live)
 	sub="${1:-}"; shift || true
 	case "$sub" in
@@ -51,6 +53,6 @@ switch)
 		git merge -q --ff-only "origin/$b" 2>/dev/null || echo "ock switch: $b has local commits not on GitHub — left as is"
 	fi
 	echo "on $b @ $(git log -1 --format='%h %s')" ;;
-help|-h|--help) sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
+help|-h|--help) awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}" ;;
 *) echo "ock: unknown command: $cmd (ock help)" >&2; exit 2 ;;
 esac

@@ -86,6 +86,8 @@ echo "# proj" > "$P/AGENTS.md"; echo "PROJECT-OWN-RULES" >> "$P/AGENTS.md"
 plan '[{"text":"hello back"}]'; run "hello"
 r="$(requests)"
 check "the project's own AGENTS.md reaches the model" grep -q PROJECT-OWN-RULES "$REQ"
+title="$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("select title from session_v2 where parent_id is null order by time_created desc limit 1").fetchone()[0])' "$H/.local/share/opencode/opencode.db" 2>/dev/null)"
+check "a session is titled with your first message (\"${title:-none}\")" test "$title" = hello
 check "an AGENTS.md in a folder above the project does not" bash -c "! grep -q STRAY-PARENT-RULES '$REQ'"
 rm -f "$H/workspace/projects/AGENTS.md" "$P/AGENTS.md"
 plan '[{"text":"hello back"}]'; run "hello"
@@ -107,6 +109,16 @@ check "build gets no subagent tool" test "$(field tools <<<"$b")" = "edit,glob,g
 build_tokens="$(field tokens <<<"$b")"
 check "build request ≈${build_tokens:-?} tokens (budget $AGENT_BUDGET)" test "${build_tokens:-99999}" -le "$AGENT_BUDGET"
 check "main relays the result" grep -q RELAYED "$T/run.log"
+
+echo "one agent at a time"
+plan '[{"when":"main session","tool":"subagent","args":{"agent":"build","description":"task one","prompt":"Do task one."}},
+ {"when":"You implement one task","text":"task one done","delay":6},
+ {"when":"main session","tool":"subagent","args":{"agent":"build","description":"task two","prompt":"Do task two."}},
+ {"when":"main session","text":"waiting"},{"when":"main session","text":"RELAYED"},{"when":"main session","text":"RELAYED"}]'
+run "do two things"
+res="$(requests | field results)"
+check "a second build is refused while one is still running" grep -q 'kit guard: build is still working in this project' <<<"$res"
+check "only one build ran" test "$(requests | grep -c '"who": "build"')" = 1
 
 echo "guard"
 plan "[{\"when\":\"main session\",\"tool\":\"shell\",\"args\":{\"command\":\"git push origin main\"}},
@@ -131,11 +143,11 @@ SERVE_PORT="$(free_port)"
 for _ in $(seq 100); do grep -q 'server password' "$T/serve.log" 2>/dev/null && break; sleep 0.2; done
 PW="$(grep -oE 'password [A-Za-z0-9_-]+' "$T/serve.log" | cut -d' ' -f2)"
 api() { curl -s -u "opencode:$PW" -H "x-opencode-directory: $P" -H 'content-type: application/json' -X POST "http://127.0.0.1:$SERVE_PORT$1" -d "$2"; }
-command_run() { # name text — runs a slash command in a new session, waits for its requests
+command_run() { # name text [requests] — runs a slash command in a new session, waits for its requests
 	local sid
 	sid="$(api /api/session '{}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
 	api "/api/session/$sid/command" "{\"name\":\"$1\",\"text\":\"$2\"}" >/dev/null
-	for _ in $(seq 60); do [[ "$(wc -l < "$REQ")" -ge 2 ]] && break; sleep 0.25; done; sleep 1
+	for _ in $(seq 60); do [[ "$(wc -l < "$REQ")" -ge "${3:-2}" ]] && break; sleep 0.25; done; sleep 1
 }
 plan '[{"when":"You are the researcher","text":"ANSWER"},{"when":"main session","text":"relay"}]'
 command_run research "what is the latest OpenSpec version"
@@ -145,7 +157,14 @@ plan '[{"when":"OpenSpec change that build","text":"PROPOSED"},{"when":"main ses
 command_run propose "add a hello command"
 r="$(requests | grep '"who": "spec"' | head -n1)"
 check "/propose runs spec with the request" grep -q 'Propose: add a hello command' <<<"$(field user <<<"$r")"
-for c in apply fix roadmap adr commit; do
+plan '[{"when":"main session","text":"APPLY-STARTED"}]'
+command_run apply "add-hello" 1
+r="$(requests | head -n1)"
+check "/apply runs in the main session (it hands out one task at a time)" test "$(field who <<<"$r")" = main
+check "/apply asks for one task per build run" grep -q 'Do only this task' <<<"$(field user <<<"$r")"
+cfg="$(cd "$P" && HOME="$H" timeout 60 "$OC" debug config --standalone 2>/dev/null)"
+check "the context cap reaches OpenCode's config (glm-5.3-flash, deepseek-v4.1-flash: 128k)" bash -c "[[ \$(grep -o '\"context\": *128000' <<<\"\$1\" | wc -l) -ge 2 ]]" _ "$cfg"
+for c in fix roadmap adr commit; do
 	check "/$c exists" test -f "$H/.config/opencode/commands/$c.md"
 done
 

@@ -11,6 +11,9 @@
  *                    held to the same boundary by the permissions in opencode.jsonc.
  *                The kit's own scripts (`ock …`) run outside the AI's tools, and commands the user
  *                types with `!` are not checked.
+ *   one at a time  a file-changing agent (build, debugger, spec) can't start while another one is
+ *                still running in the same project: two agents editing one folder collide and waste
+ *                tokens redoing each other's work. Read-only agents (researcher) may run alongside.
  *   titles       session titles come from the first message (no extra model request per session)
  *   trims        drops tools and prompt lines this setup never uses (they cost tokens every request),
  *                and AGENTS.md files from folders above the project (they belong to no project)
@@ -165,16 +168,48 @@ const textOf = (content: unknown): string => {
   return ""
 }
 
+// ---- one file-changing agent at a time --------------------------------------------------------
+const WRITERS = new Set(["build", "debugger", "spec"])
+type Child = { agent: string; dir: string; since: number }
+const running = new Map<string, Child>() // child session id → what runs there
+async function watchSubagents(ctx: any) {
+  try {
+    const types = ["session.created", "session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"]
+    for await (const e of ctx.event.subscribe({ types })) {
+      const d = e?.data ?? {}
+      if (e.type === "session.created") {
+        if (d.parentID) running.set(d.sessionID, { agent: d.agent ?? "", dir: e.location?.directory ?? d.location?.directory ?? "", since: Date.now() })
+      } else running.delete(d.sessionID)
+    }
+  } catch {
+    // the guard is a safety net; if the event stream ends, OpenCode keeps working without it
+  }
+}
+const busyWriter = (dir: string): Child | undefined => {
+  for (const c of running.values()) if (WRITERS.has(c.agent) && (!c.dir || c.dir === dir)) return c
+}
+
 export default {
   id: "opencode-kit",
   async setup(ctx: any) {
     const root: string = ctx.location?.directory ?? process.cwd()
+    void watchSubagents(ctx)
 
     await ctx.tool.transform((tools: any) => {
       for (const t of tools.list()) if (t.id === "skill" || t.id.startsWith("opencode_")) tools.remove(t.id)
     })
 
     await ctx.permission.hook("evaluate", (e: any) => {
+      if (e.action === "subagent" && e.effect !== "deny") {
+        const wanted = String(e.resources?.[0] ?? "")
+        const busy = WRITERS.has(wanted) ? busyWriter(root) : undefined
+        if (busy) {
+          const mins = Math.max(1, Math.round((Date.now() - busy.since) / 60000))
+          e.effect = "deny"
+          e.message = `kit guard: ${busy.agent} is still working in this project (${mins} min so far). Only one agent changes files at a time — you'll be woken when it finishes; continue then.`
+        }
+        return
+      }
       if (e.action !== "shell" || e.effect === "deny") return
       for (const command of e.resources ?? []) {
         const why = blocked(String(command), root)
@@ -188,7 +223,10 @@ export default {
 
     await ctx.session.hook("title", (e: any) => {
       const users = (e.messages ?? []).filter((m: any) => m.role === "user")
-      const text = textOf(users[0]?.content).replace(/\s+/g, " ").trim()
+      // OpenCode wraps the first message: "Here is the first message of the conversation: <message>…</message>"
+      const raw = textOf(users[0]?.content)
+      const inner = /<message>\s*([\s\S]*?)\s*(?:<\/message>|$)/.exec(raw)?.[1] ?? raw
+      const text = inner.replace(/\s+/g, " ").trim()
       e.result = text ? (text.length > 60 ? text.slice(0, 57) + "…" : text) : "New session"
     })
 

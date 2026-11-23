@@ -13,6 +13,18 @@
   "warming": false,
   "tool_output": { "max_lines": 400, "max_bytes": 16384 },
   "compaction": { "auto": true, "keep": { "tokens": 8000 } },
+  // Context cap: OpenCode compacts a session (summary + recent messages) only when it nears the
+  // model's context limit. Go's models allow far more than 300k, and every step resends the whole
+  // session, so an uncapped build session reached 320k tokens per request. 128k keeps quality and
+  // stops runaway sessions. Keep these model ids in step with agent-models.conf.
+  "providers": {
+    "opencode-go": {
+      "models": {
+        "glm-5.3-flash": { "limit": { "context": 128000 } },
+        "deepseek-v4.1-flash": { "limit": { "context": 128000 } }
+      }
+    }
+  },
   "permissions": [
     // Never useful here, each costs prompt tokens on every request
     { "action": "experimental_image_generate", "resource": "*", "effect": "deny" },

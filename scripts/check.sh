@@ -50,7 +50,8 @@ before=$fail
 while read -r glob lines words; do
 	[[ -z "$glob" || "$glob" == \#* ]] && continue
 	for f in $glob; do
-		l="$(wc -l < "$f")"; w="$(LC_ALL=C wc -w < "$f")"   # same count in every locale (UTF-8 counts "—" as a word)
+		# awk, not wc: wc -w differs between implementations and locales (some count a lone "—" as a word)
+		l="$(awk 'END { print NR }' "$f")"; w="$(awk '{ n += NF } END { print n + 0 }' "$f")"
 		if (( l > lines || w > words )); then bad "budget: $f is $l lines / $w words (max $lines / $words) — move rules into a script"; fi
 	done
 done < budgets.conf

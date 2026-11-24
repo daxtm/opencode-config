@@ -11,9 +11,12 @@
  *                    held to the same boundary by the permissions in opencode.jsonc.
  *                The kit's own scripts (`ock …`) run outside the AI's tools, and commands the user
  *                types with `!` are not checked.
- *   one at a time  a file-changing agent (build, debugger, spec) can't start while another one is
- *                still running in the same project: two agents editing one folder collide and waste
- *                tokens redoing each other's work. Read-only agents (researcher) may run alongside.
+ *   one at a time  a NEW file-changing agent (build, debugger, spec) can't start while another one
+ *                is running in the same project — two agents editing one folder collide. Follow-ups to
+ *                the running agent (steering it) always go through, and read-only agents may run
+ *                alongside.
+ *   stop         gives main a `stop_subagents` tool: interrupts the agents running in this project
+ *                at once, so "stop" means stop.
  *   titles       session titles come from the first message (no extra model request per session)
  *   trims        drops tools and prompt lines this setup never uses (they cost tokens every request),
  *                and AGENTS.md files from folders above the project (they belong to no project)
@@ -168,26 +171,33 @@ const textOf = (content: unknown): string => {
   return ""
 }
 
-// ---- one file-changing agent at a time --------------------------------------------------------
+// ---- one file-changing agent at a time, and a way to stop them ---------------------------------
 const WRITERS = new Set(["build", "debugger", "spec"])
-type Child = { agent: string; dir: string; since: number }
-const running = new Map<string, Child>() // child session id → what runs there
+type Child = { agent: string; dir: string; running: boolean; since: number }
+const children = new Map<string, Child>() // child session id → its agent and whether it is running
 async function watchSubagents(ctx: any) {
   try {
-    const types = ["session.created", "session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"]
+    const types = ["session.created", "session.execution.started", "session.execution.succeeded",
+      "session.execution.failed", "session.execution.interrupted"]
     for await (const e of ctx.event.subscribe({ types })) {
       const d = e?.data ?? {}
       if (e.type === "session.created") {
-        if (d.parentID) running.set(d.sessionID, { agent: d.agent ?? "", dir: e.location?.directory ?? d.location?.directory ?? "", since: Date.now() })
-      } else running.delete(d.sessionID)
+        if (d.parentID)
+          children.set(d.sessionID, { agent: d.agent ?? "", dir: e.location?.directory ?? d.location?.directory ?? "", running: true, since: Date.now() })
+        continue
+      }
+      const c = children.get(d.sessionID)
+      if (!c) continue
+      // a follow-up restarts a child's run: started marks it running again, the end of a run marks it idle
+      if (e.type === "session.execution.started") { if (!c.running) c.since = Date.now(); c.running = true }
+      else c.running = false
     }
   } catch {
     // the guard is a safety net; if the event stream ends, OpenCode keeps working without it
   }
 }
-const busyWriter = (dir: string): Child | undefined => {
-  for (const c of running.values()) if (WRITERS.has(c.agent) && (!c.dir || c.dir === dir)) return c
-}
+const runningIn = (dir: string) =>
+  [...children.entries()].filter(([, c]) => c.running && (!c.dir || c.dir === dir))
 
 export default {
   id: "opencode-kit",
@@ -195,21 +205,45 @@ export default {
     const root: string = ctx.location?.directory ?? process.cwd()
     void watchSubagents(ctx)
 
+    // a new writer while another runs is refused; a follow-up (input.sessionID) is the user steering
+    await ctx.tool.hook("execute.before", (e: any) => {
+      if (e.tool !== "subagent") return
+      const input = e.input ?? {}
+      if (input.sessionID || !WRITERS.has(String(input.agent ?? ""))) return
+      const busy = runningIn(root).find(([, c]) => WRITERS.has(c.agent))
+      if (!busy) return
+      const [id, c] = busy
+      const mins = Math.max(1, Math.round((Date.now() - c.since) / 60000))
+      throw new Error(`kit guard: ${c.agent} is still working in this project (${mins} min, sessionID ${id}). ` +
+        `To change its course, send it a follow-up with that sessionID; to stop it, call stop_subagents.`)
+    })
+
+    await ctx.tool.transform((tools: any) =>
+      tools.add({
+        name: "stop_subagents",
+        description: "Stop every subagent running in this project right away (the user said stop, wait, or changed course).",
+        input: { type: "object", properties: {}, additionalProperties: false },
+        execute: async () => {
+          const stopped: string[] = []
+          for (const [id, c] of runningIn(root)) {
+            try {
+              await ctx.session.interrupt({ sessionID: id })
+              c.running = false
+              stopped.push(`${c.agent} (${id})`)
+            } catch {
+              // already finished between the check and the interrupt
+            }
+          }
+          return { content: stopped.length ? `Stopped: ${stopped.join(", ")}` : "No subagents were running." }
+        },
+      }),
+    )
+
     await ctx.tool.transform((tools: any) => {
       for (const t of tools.list()) if (t.id === "skill" || t.id.startsWith("opencode_")) tools.remove(t.id)
     })
 
     await ctx.permission.hook("evaluate", (e: any) => {
-      if (e.action === "subagent" && e.effect !== "deny") {
-        const wanted = String(e.resources?.[0] ?? "")
-        const busy = WRITERS.has(wanted) ? busyWriter(root) : undefined
-        if (busy) {
-          const mins = Math.max(1, Math.round((Date.now() - busy.since) / 60000))
-          e.effect = "deny"
-          e.message = `kit guard: ${busy.agent} is still working in this project (${mins} min so far). Only one agent changes files at a time — you'll be woken when it finishes; continue then.`
-        }
-        return
-      }
       if (e.action !== "shell" || e.effect === "deny") return
       for (const command of e.resources ?? []) {
         const why = blocked(String(command), root)

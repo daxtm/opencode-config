@@ -71,6 +71,13 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         if "tool" in step:
+            # "$LAST_SESSION" in a step's args = the newest session id seen in a tool result (e.g. a subagent's)
+            args = json.dumps(step["args"])
+            if "$LAST_SESSION" in args:
+                import re
+                seen = re.findall(r"ses_[A-Za-z0-9]+", json.dumps([m for m in body.get("messages", []) if m.get("role") == "tool"]))
+                args = args.replace("$LAST_SESSION", seen[-1] if seen else "ses_none")
+            step = dict(step, args=json.loads(args))
             call = {"index": 0, "id": "call_%d" % n, "type": "function",
                     "function": {"name": step["tool"], "arguments": json.dumps(step["args"])}}
             event({"role": "assistant", "tool_calls": [call]}, None)

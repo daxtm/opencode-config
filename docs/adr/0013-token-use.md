@@ -1,6 +1,6 @@
 # ADR-0013: Bound session size — one build per task, a 128k context cap
 
-- Status: Accepted
+- Status: Partly superseded by ADR-0014 (the 128k cap stays)
 - Date: 2026-11-23
 - Related: ADR-0008
 

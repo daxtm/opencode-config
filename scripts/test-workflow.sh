@@ -41,8 +41,9 @@ check "main prompt: no unqualified implementation follow-through" \
 	bash -c "! grep -q 'Follow an implementation request through its checks' '$MAIN'"
 check "/propose still stops for review" grep -qi 'stop for review' "$ROOT/global/commands/propose.md"
 check "/propose still never implements" grep -qiE "don.t implement" "$ROOT/global/commands/propose.md"
-check "/apply still runs one task at a time" grep -q "ONE task at a time" "$ROOT/global/commands/apply.md"
-check "/apply still starts the next task itself" grep -q "start the next one" "$ROOT/global/commands/apply.md"
+check "/apply runs the whole change in one build" grep -q "ONE build for the whole change" "$ROOT/global/commands/apply.md"
+check "/apply passes the user's steering to the running build" grep -q "follow-up (its sessionID)" "$ROOT/global/commands/apply.md"
+check "main prompt: stop means stop (stop_subagents first)" grep -q "call stop_subagents first" "$MAIN"
 
 OCK_REAL_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}"; mkdir -p "$OCK_REAL_CACHE"   # before HOME changes
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT

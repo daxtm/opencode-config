@@ -23,6 +23,28 @@ if ! command -v openspec >/dev/null; then
 	echo "test-workflow: openspec is required (run ock kit apply or install @fission-ai/openspec@2.1.1)" >&2; exit 1
 fi
 
+# ---- prompt contract regression: proposal stops before build --------------------------------------
+# Named regression for the review boundary (openspec/changes/stop-auto-build, task 1.1).
+# Red-first: against the pre-fix main prompt the contract checks below FAIL — the prompt had no
+# stop-after-spec rule, only the unqualified "Follow an implementation request through its checks",
+# so spec completion could be read as authorizing the build. The /propose and /apply checks are
+# preservation checks and must keep passing through the fix.
+echo "prompt contract: proposal stops before build"
+MAIN="$ROOT/global/agents/main.md"
+check "main prompt: spec completion stops for review" \
+	grep -qiE 'stops? for review|stop(s|ping)? (after|before) (the )?spec|spec[^.]{0,40}\bstops?\b' "$MAIN"
+check "main prompt: a new explicit implementation request is required after the proposal" \
+	grep -qiE '(new|fresh|later|separate) (explicit |unambiguous )?(implementation|build) request' "$MAIN"
+check "main prompt: the earlier request cannot authorize the proposal" \
+	grep -qiE '(cannot|can not|does not|never) authoriz|not authoriz' "$MAIN"
+check "main prompt: no unqualified implementation follow-through" \
+	bash -c "! grep -q 'Follow an implementation request through its checks' '$MAIN'"
+check "/propose still stops for review" grep -qi 'stop for review' "$ROOT/global/commands/propose.md"
+check "/propose still never implements" grep -qiE "don.t implement" "$ROOT/global/commands/propose.md"
+check "/apply runs the whole change in one build" grep -q "ONE build for the whole change" "$ROOT/global/commands/apply.md"
+check "/apply passes the user's steering to the running build" grep -q "follow-up (its sessionID)" "$ROOT/global/commands/apply.md"
+check "main prompt: stop means stop (stop_subagents first)" grep -q "call stop_subagents first" "$MAIN"
+
 OCK_REAL_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}"; mkdir -p "$OCK_REAL_CACHE"   # before HOME changes
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 H="$T/home"; GH="$T/github"; STUBS="$T/stubs"; LOG="$T/log"

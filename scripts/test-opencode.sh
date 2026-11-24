@@ -4,15 +4,16 @@
 #
 # Covers what the user would notice: which agents exist; the size of every request (system prompt +
 # tool definitions — what each turn costs before your words); no separate title request; which tools
-# each agent gets; main → build delegation; the guard refusing pushes to main and writes outside the
-# project; the slash commands reaching the right agent; `ock` on the agents' PATH.
+# each agent gets; main → build delegation; spec completion stopping for review (relayed invitation,
+# zero build requests) with /apply still authorized to build; the guard refusing pushes to main and
+# writes outside the project; the slash commands reaching the right agent; `ock` on the agents' PATH.
 #
 # Needs OpenCode 2.3.x (`opencode`, or $OCK_OPENCODE), python3, git, curl. Skipped without OpenCode.
 # Usage: scripts/test-opencode.sh
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
-MAIN_BUDGET=3200   # tokens (chars/4) per main-session request: system prompt + tools
+MAIN_BUDGET=3300   # tokens (chars/4) per main-session request: system prompt + tools (+~75 for stop_subagents)
 AGENT_BUDGET=2700  # per subagent request
 fails=0; passes=0
 pass() { passes=$((passes + 1)); echo "  ok   $*"; }
@@ -58,7 +59,8 @@ run() { (cd "$P" && HOME="$H" timeout 150 "$OC" run --standalone --archived --au
 # One line per request: agent tools≈tokens total≈tokens [tool results…]
 requests() {
 	python3 - "$REQ" <<'PY'
-import json, sys
+import json, signal, sys
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)  # callers often read only the first line
 marks = [("main session", "main"), ("You implement one task", "build"), ("OpenSpec change that build", "spec"),
          ("You are the researcher", "researcher"), ("finishing a merge", "resolver"), ("Reproduces a failure", "debugger")]
 for line in open(sys.argv[1]):
@@ -69,7 +71,8 @@ for line in open(sys.argv[1]):
     est = (len(sysm) + len(json.dumps(b.get("tools", [])))) // 4
     results = [m["content"] if isinstance(m["content"], str) else json.dumps(m["content"]) for m in b["messages"] if m["role"] == "tool"]
     users = [m["content"] if isinstance(m["content"], str) else json.dumps(m["content"]) for m in b["messages"] if m["role"] == "user"]
-    print(json.dumps({"who": who, "tools": ",".join(tools), "tokens": est, "results": results, "user": users[-1] if users else ""}))
+    print(json.dumps({"who": who, "tools": ",".join(tools), "tokens": est, "results": results,
+                      "user": users[-1] if users else "", "system": sysm}))
 PY
 }
 field() { python3 -c 'import json,sys; [print(json.loads(l)[sys.argv[1]] if not isinstance(json.loads(l)[sys.argv[1]], list) else "\n".join(json.loads(l)[sys.argv[1]])) for l in sys.stdin]' "$1"; }
@@ -93,7 +96,7 @@ rm -f "$H/workspace/projects/AGENTS.md" "$P/AGENTS.md"
 plan '[{"text":"hello back"}]'; run "hello"
 r="$(requests)"
 check "one model request per message (titles cost nothing)" test "$(wc -l <<<"$r")" = 1
-check "main session tools: edit glob grep read shell subagent write" test "$(field tools <<<"$r")" = "edit,glob,grep,read,shell,subagent,write"
+check "main session tools: edit glob grep read shell stop_subagents subagent write" test "$(field tools <<<"$r")" = "edit,glob,grep,read,shell,stop_subagents,subagent,write"
 main_tokens="$(field tokens <<<"$r")"
 check "main session request ≈${main_tokens} tokens (budget $MAIN_BUDGET; stock OpenCode ≈6800)" test "$main_tokens" -le "$MAIN_BUDGET"
 
@@ -110,6 +113,30 @@ build_tokens="$(field tokens <<<"$b")"
 check "build request ≈${build_tokens:-?} tokens (budget $AGENT_BUDGET)" test "${build_tokens:-99999}" -le "$AGENT_BUDGET"
 check "main relays the result" grep -q RELAYED "$T/run.log"
 
+echo "proposal handoff stops before build"
+# Scripted spec completion (openspec/changes/stop-auto-build, task 1.3): main routes the request to
+# spec, spec reports the proposal, main relays the review invitation — and never delegates to build.
+# This proves the routing/context plumbing with a fake model; it cannot prove a real model refuses.
+plan '[{"when":"main session","tool":"subagent","args":{"agent":"spec","description":"propose hello","prompt":"Propose: add a hello command. Stop for review; do not implement."}},
+ {"when":"OpenSpec change that build","text":"CHANGE-READY: proposal add-hello is committed and pushed"},
+ {"when":"main session","text":"Proposal ready: Review it, then /apply — or tell me what to change"}]'
+run "propose a hello command"
+r="$(requests)"
+m="$(grep '"who": "main"' <<<"$r" | head -n1)"
+check "the request goes through spec" test -n "$(grep '"who": "spec"' <<<"$r")"
+check "no build agent is started after spec completes" test "$(grep -c '"who": "build"' <<<"$r")" = 0
+check "no build delegation is even attempted" bash -c '! grep -q "\"agent\": \"build\"" '"$REQ"
+check "main relays the review invitation" grep -q 'Review it, then /apply' "$T/run.log"
+sysm="$(field system <<<"$m")"
+check "the installed main prompt (captured request, not just the source) stops for review after spec" \
+	grep -qi 'stop for review' <<<"$sysm"
+check "the installed main prompt says notifications never authorize build" \
+	grep -q 'never authorize build' <<<"$sysm"
+check "the installed main prompt drops the unqualified follow-through" \
+	bash -c '! grep -q "Follow an implementation request through its checks" <<<"$1"' _ "$sysm"
+check "the installed main prompt names /apply as the explicit authorization" \
+	grep -q '/apply' <<<"$sysm"
+
 echo "one agent at a time"
 plan '[{"when":"main session","tool":"subagent","args":{"agent":"build","description":"task one","prompt":"Do task one."}},
  {"when":"You implement one task","text":"task one done","delay":6},
@@ -118,7 +145,31 @@ plan '[{"when":"main session","tool":"subagent","args":{"agent":"build","descrip
 run "do two things"
 res="$(requests | field results)"
 check "a second build is refused while one is still running" grep -q 'kit guard: build is still working in this project' <<<"$res"
+check "the refusal tells main how to steer or stop it" grep -q 'send it a follow-up with that sessionID; to stop it, call stop_subagents' <<<"$res"
 check "only one build ran" test "$(requests | grep -c '"who": "build"')" = 1
+
+echo "steering"
+plan '[{"when":"main session","tool":"subagent","args":{"agent":"build","description":"the change","prompt":"Implement the change."}},
+ {"when":"You implement one task","text":"first part done","delay":5},
+ {"when":"main session","tool":"subagent","args":{"agent":"build","description":"steer","prompt":"STEER: also add a README line.","sessionID":"$LAST_SESSION"}},
+ {"when":"You implement one task","text":"README line added too"},
+ {"when":"main session","text":"ok"},{"when":"main session","text":"ok"},{"when":"main session","text":"ok"}]'
+run "build it, then change course"
+res="$(requests | field results)"
+check "a follow-up to the running build goes through (the user can steer it)" bash -c '! grep -q "kit guard" <<<"$1"' _ "$res"
+check "the running build receives the follow-up" bash -c "grep 'You implement one task' '$REQ' | grep -q 'STEER: also add a README line'"
+check "steering keeps the same build (no second build session)" test "$(grep -o 'sessionID: ses_[A-Za-z0-9]*' <<<"$res" | sort -u | wc -l)" = 1
+
+echo "stop"
+plan '[{"when":"main session","tool":"subagent","args":{"agent":"build","description":"long change","prompt":"Implement the long change."}},
+ {"when":"You implement one task","text":"SHOULD-NOT-FINISH","delay":25},
+ {"when":"main session","tool":"stop_subagents","args":{}},
+ {"when":"main session","text":"Stopped."},{"when":"main session","text":"ok"},{"when":"main session","text":"ok"}]'
+start=$SECONDS; run "start it, then stop"; took=$((SECONDS - start))
+res="$(requests | field results)"
+check "stop_subagents stops the running build" grep -q 'Stopped: build (ses_' <<<"$res"
+check "the stopped build never delivers its result" bash -c '! grep -q "SHOULD-NOT-FINISH" "$1"' _ "$REQ"
+check "stopping doesn't wait for the build (${took}s, the build needed 25s+)" test "$took" -lt 22
 
 echo "guard"
 plan "[{\"when\":\"main session\",\"tool\":\"shell\",\"args\":{\"command\":\"git push origin main\"}},
@@ -157,11 +208,16 @@ plan '[{"when":"OpenSpec change that build","text":"PROPOSED"},{"when":"main ses
 command_run propose "add a hello command"
 r="$(requests | grep '"who": "spec"' | head -n1)"
 check "/propose runs spec with the request" grep -q 'Propose: add a hello command' <<<"$(field user <<<"$r")"
-plan '[{"when":"main session","text":"APPLY-STARTED"}]'
-command_run apply "add-hello" 1
+plan '[{"when":"main session","tool":"subagent","args":{"agent":"build","description":"add-hello","prompt":"Implement OpenSpec change add-hello: every unchecked task in tasks.md, in order."}},
+ {"when":"You implement one task","text":"BUILT: add-hello done and pushed"},
+ {"when":"main session","text":"APPLY-RELAY"}]'
+command_run apply "add-hello" 2
 r="$(requests | head -n1)"
-check "/apply runs in the main session (it hands out one task at a time)" test "$(field who <<<"$r")" = main
-check "/apply asks for one task per build run" grep -q 'Do only this task' <<<"$(field user <<<"$r")"
+check "/apply runs in the main session" test "$(field who <<<"$r")" = main
+check "/apply starts one build for the whole change" grep -q 'ONE build for the whole change' <<<"$(field user <<<"$r")"
+b="$(requests | grep '"who": "build"' | head -n1)"
+check "/apply still starts the build itself (no fresh approval)" test -n "$b"
+check "the build gets every unchecked task, in order" grep -q 'every unchecked task in tasks.md, in order' <<<"$(field user <<<"$b")"
 cfg="$(cd "$P" && HOME="$H" timeout 60 "$OC" debug config --standalone 2>/dev/null)"
 check "the context cap reaches OpenCode's config (glm-5.3-flash, deepseek-v4.1-flash: 128k)" bash -c "[[ \$(grep -o '\"context\": *128000' <<<\"\$1\" | wc -l) -ge 2 ]]" _ "$cfg"
 for c in fix roadmap adr commit; do

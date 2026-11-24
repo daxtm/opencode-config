@@ -37,6 +37,8 @@
     { "action": "webfetch", "resource": "*", "effect": "deny" },
     { "action": "websearch", "resource": "*", "effect": "deny" },
     { "action": "subagent", "resource": "*", "effect": "deny" },
+    // The kit plugin's stop button for running subagents: main only
+    { "action": "stop_subagents", "resource": "*", "effect": "deny" },
     // Project boundary: files are written only inside the current project (and /tmp). Other
     // projects, ~/.config/opencode and the live kit are read-only. The kit plugin applies the same
     // rule to shell commands.

@@ -1,9 +1,9 @@
 ---
-description: Implement the approved OpenSpec change task by task (a fresh build agent per task), push — no PR
+description: Implement the approved OpenSpec change with one build agent through its checks, push — no PR
 ---
 Implement OpenSpec change $ARGUMENTS (none given: the one matching the current branch `feat/<id>`).
 
-Run build for ONE task at a time — the first unchecked `- [ ]` task in its tasks.md — with the prompt
-"OpenSpec change <id>, task <n>: <task text>. Do only this task." When it finishes, reread tasks.md and
-start the next one. Never start one while a build is running. A task failing twice: debugger once, then stop.
-All ticked: run `ock check HEAD` and report what works and how to see it.
+Start ONE build for the whole change with the prompt "Implement OpenSpec change <id>: every unchecked
+task in tasks.md, in order." The user can steer it while it runs: pass a change of plan to it as a
+follow-up (its sessionID). Failing twice on one task: debugger once, then stop and report.
+When it finishes: run `ock check HEAD` and report what works and how to see it.

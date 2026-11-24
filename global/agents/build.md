@@ -6,10 +6,12 @@ model: {{MODEL:build}}
 You implement one task on the current branch of the current project.
 
 1. Read the request or, when named, the OpenSpec change (`openspec/changes/<id>/`: proposal,
-   design, specs, tasks.md). Given one task, do only that task; earlier tasks are already done.
+   design, specs, tasks.md). Work through its unchecked tasks in order, ticking each as it passes.
+   A follow-up message mid-run is the user steering: follow it.
 2. Make the acceptance check fail first: run the real entry point, or add a focused test of what
    the user will observe (command output, files, behavior).
-3. Implement the smallest complete change. Run the relevant test while iterating.
+3. Implement the smallest complete change. Run the relevant test while iterating. Keep context
+   lean: read the parts of files you need, cap long command output (`| tail -n 40`).
 4. Keep `scripts/check.sh` running the project's real checks from a clean checkout, with the
    dependencies it needs.
 5. Tick only completed tasks in tasks.md. For a direct feature (no OpenSpec change), add the trailer

@@ -13,7 +13,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
-MAIN_BUDGET=3200   # tokens (chars/4) per main-session request: system prompt + tools
+MAIN_BUDGET=3300   # tokens (chars/4) per main-session request: system prompt + tools (+~75 for stop_subagents)
 AGENT_BUDGET=2700  # per subagent request
 fails=0; passes=0
 pass() { passes=$((passes + 1)); echo "  ok   $*"; }
@@ -59,7 +59,8 @@ run() { (cd "$P" && HOME="$H" timeout 150 "$OC" run --standalone --archived --au
 # One line per request: agent tools≈tokens total≈tokens [tool results…]
 requests() {
 	python3 - "$REQ" <<'PY'
-import json, sys
+import json, signal, sys
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)  # callers often read only the first line
 marks = [("main session", "main"), ("You implement one task", "build"), ("OpenSpec change that build", "spec"),
          ("You are the researcher", "researcher"), ("finishing a merge", "resolver"), ("Reproduces a failure", "debugger")]
 for line in open(sys.argv[1]):
@@ -95,7 +96,7 @@ rm -f "$H/workspace/projects/AGENTS.md" "$P/AGENTS.md"
 plan '[{"text":"hello back"}]'; run "hello"
 r="$(requests)"
 check "one model request per message (titles cost nothing)" test "$(wc -l <<<"$r")" = 1
-check "main session tools: edit glob grep read shell subagent write" test "$(field tools <<<"$r")" = "edit,glob,grep,read,shell,subagent,write"
+check "main session tools: edit glob grep read shell stop_subagents subagent write" test "$(field tools <<<"$r")" = "edit,glob,grep,read,shell,stop_subagents,subagent,write"
 main_tokens="$(field tokens <<<"$r")"
 check "main session request ≈${main_tokens} tokens (budget $MAIN_BUDGET; stock OpenCode ≈6800)" test "$main_tokens" -le "$MAIN_BUDGET"
 
@@ -144,7 +145,31 @@ plan '[{"when":"main session","tool":"subagent","args":{"agent":"build","descrip
 run "do two things"
 res="$(requests | field results)"
 check "a second build is refused while one is still running" grep -q 'kit guard: build is still working in this project' <<<"$res"
+check "the refusal tells main how to steer or stop it" grep -q 'send it a follow-up with that sessionID; to stop it, call stop_subagents' <<<"$res"
 check "only one build ran" test "$(requests | grep -c '"who": "build"')" = 1
+
+echo "steering"
+plan '[{"when":"main session","tool":"subagent","args":{"agent":"build","description":"the change","prompt":"Implement the change."}},
+ {"when":"You implement one task","text":"first part done","delay":5},
+ {"when":"main session","tool":"subagent","args":{"agent":"build","description":"steer","prompt":"STEER: also add a README line.","sessionID":"$LAST_SESSION"}},
+ {"when":"You implement one task","text":"README line added too"},
+ {"when":"main session","text":"ok"},{"when":"main session","text":"ok"},{"when":"main session","text":"ok"}]'
+run "build it, then change course"
+res="$(requests | field results)"
+check "a follow-up to the running build goes through (the user can steer it)" bash -c '! grep -q "kit guard" <<<"$1"' _ "$res"
+check "the running build receives the follow-up" bash -c "grep 'You implement one task' '$REQ' | grep -q 'STEER: also add a README line'"
+check "steering keeps the same build (no second build session)" test "$(grep -o 'sessionID: ses_[A-Za-z0-9]*' <<<"$res" | sort -u | wc -l)" = 1
+
+echo "stop"
+plan '[{"when":"main session","tool":"subagent","args":{"agent":"build","description":"long change","prompt":"Implement the long change."}},
+ {"when":"You implement one task","text":"SHOULD-NOT-FINISH","delay":25},
+ {"when":"main session","tool":"stop_subagents","args":{}},
+ {"when":"main session","text":"Stopped."},{"when":"main session","text":"ok"},{"when":"main session","text":"ok"}]'
+start=$SECONDS; run "start it, then stop"; took=$((SECONDS - start))
+res="$(requests | field results)"
+check "stop_subagents stops the running build" grep -q 'Stopped: build (ses_' <<<"$res"
+check "the stopped build never delivers its result" bash -c '! grep -q "SHOULD-NOT-FINISH" "$1"' _ "$REQ"
+check "stopping doesn't wait for the build (${took}s, the build needed 25s+)" test "$took" -lt 22
 
 echo "guard"
 plan "[{\"when\":\"main session\",\"tool\":\"shell\",\"args\":{\"command\":\"git push origin main\"}},
@@ -183,16 +208,16 @@ plan '[{"when":"OpenSpec change that build","text":"PROPOSED"},{"when":"main ses
 command_run propose "add a hello command"
 r="$(requests | grep '"who": "spec"' | head -n1)"
 check "/propose runs spec with the request" grep -q 'Propose: add a hello command' <<<"$(field user <<<"$r")"
-plan '[{"when":"main session","tool":"subagent","args":{"agent":"build","description":"add-hello task 1","prompt":"OpenSpec change add-hello, task 1: whatever tasks.md says. Do only this task."}},
- {"when":"You implement one task","text":"TASK-BUILT: add-hello task 1 is done and pushed"},
+plan '[{"when":"main session","tool":"subagent","args":{"agent":"build","description":"add-hello","prompt":"Implement OpenSpec change add-hello: every unchecked task in tasks.md, in order."}},
+ {"when":"You implement one task","text":"BUILT: add-hello done and pushed"},
  {"when":"main session","text":"APPLY-RELAY"}]'
 command_run apply "add-hello" 2
 r="$(requests | head -n1)"
-check "/apply runs in the main session (it hands out one task at a time)" test "$(field who <<<"$r")" = main
-check "/apply asks for one task per build run" grep -q 'Do only this task' <<<"$(field user <<<"$r")"
+check "/apply runs in the main session" test "$(field who <<<"$r")" = main
+check "/apply starts one build for the whole change" grep -q 'ONE build for the whole change' <<<"$(field user <<<"$r")"
 b="$(requests | grep '"who": "build"' | head -n1)"
-check "/apply still starts the build itself (no fresh approval per task)" test -n "$b"
-check "the build request is the single next task" grep -q 'Do only this task' <<<"$(field user <<<"$b")"
+check "/apply still starts the build itself (no fresh approval)" test -n "$b"
+check "the build gets every unchecked task, in order" grep -q 'every unchecked task in tasks.md, in order' <<<"$(field user <<<"$b")"
 cfg="$(cd "$P" && HOME="$H" timeout 60 "$OC" debug config --standalone 2>/dev/null)"
 check "the context cap reaches OpenCode's config (glm-5.3-flash, deepseek-v4.1-flash: 128k)" bash -c "[[ \$(grep -o '\"context\": *128000' <<<\"\$1\" | wc -l) -ge 2 ]]" _ "$cfg"
 for c in fix roadmap adr commit; do

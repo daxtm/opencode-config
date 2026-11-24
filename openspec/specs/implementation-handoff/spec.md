@@ -46,16 +46,26 @@ After a proposal handoff, main MUST start build only on a subsequent explicit us
 - **WHEN** the user sends `/apply` for the proposal or says “implement this proposed change now”
 - **THEN** main starts implementation using the existing build workflow
 
-### Requirement: Authorized execution remains unchanged
+### Requirement: Authorized execution runs without further approval and stays steerable
 
-Main MUST continue accepting clear direct implementation requests that do not require spec. An authorized `/apply` MUST retain fresh build sessions for successive unchecked tasks, one at a time, without requiring another user approval between tasks.
+Main MUST continue accepting clear direct implementation requests that do not require spec. An authorized `/apply` MUST run the change's unchecked tasks in order in one build session, without requiring another user approval between tasks. While build runs, the user MUST be able to change its course (main sends the running build a follow-up) or stop it (main stops it at once); the guard against a second concurrent build MUST NOT block either.
 
 #### Scenario: Direct implementation
 
 - **WHEN** the user requests a clear implementation that needs no proposal
 - **THEN** main can delegate it directly to build
 
-#### Scenario: Apply has more tasks
+#### Scenario: Apply runs the whole change
 
-- **WHEN** an explicitly requested `/apply` finishes one task and another unchecked task remains
-- **THEN** main starts the next task in a fresh build session after the previous one finishes, subject to existing failure handling
+- **WHEN** the user runs `/apply` for a change with several unchecked tasks
+- **THEN** main starts one build that works through every unchecked task in order, subject to existing failure handling
+
+#### Scenario: The user changes course mid-build
+
+- **WHEN** build is running and the user asks for a change of plan
+- **THEN** main sends the running build a follow-up with the change, and no second build starts
+
+#### Scenario: The user says stop
+
+- **WHEN** build is running and the user says stop
+- **THEN** main stops the running build immediately, before answering

@@ -13,7 +13,7 @@ Start OpenCode in a project folder (`cd ~/workspace/projects/<name> && opencode`
 |---|---|
 | Ask something, small edit | just say it |
 | Plan one feature (OpenSpec change on `feat/<id>`) | `/propose <idea>` (or `/propose next` from the roadmap) |
-| Build the approved change (one fresh build agent per task) | `/apply` |
+| Build the approved change | `/apply` (say "stop" or a change of plan any time) |
 | Fix a bug or a failing check | `/fix <symptom>` |
 | Look something up on the web | `/research <question>` |
 | Plan a whole project | `/roadmap <idea>` |

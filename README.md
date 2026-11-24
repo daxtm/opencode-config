@@ -25,6 +25,12 @@ Start OpenCode in a project folder (`cd ~/workspace/projects/<name> && opencode`
 | Go back to main | `!ock switch` |
 | See where your tokens went | `!ock usage` (`!ock usage 30` for 30 days) |
 
+Planning never rolls into building on its own. When `/propose` finishes, the change is written and
+pushed and the session stops for your review — the original request does not authorize an unseen
+plan, and neither does "looks good", a pending task or a finish notification. Review it, then run
+`/apply` (or say "implement it") to build it, one task per build agent; a direct request that needs
+no spec still builds right away.
+
 While a subagent works, a line above the prompt shows which one, for how long, and what it's doing
 right now; the sidebar lists the session's subagents; a toast (and, when the terminal isn't focused,
 a desktop notification) says when one finishes. ↓ on an empty prompt opens OpenCode's subagent list.
